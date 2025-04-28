@@ -1,0 +1,58 @@
+"Se toda vez eu passo a data inicial e final, não faz muito sentido guardar um DataFrame antigo, porque os dados mudam."
+
+✅ Verdade. No seu fluxo atual:
+
+Você sempre informa uma nova data.
+
+O código vai lá e puxa os dados atualizados diretamente do banco de dados (PostgreSQL).
+
+Ou seja, não depende do que está guardado no agent_data!
+
+Então sim: o agent_data guardado pode ficar rapidamente desatualizado, e não deveria ser usado sozinho para análises novas com intervalo de datas personalizado.
+
+O fluxo ideal seria:
+
+Se for solicitada uma nova data (start_date e end_date passados) → buscar do banco de dados (PostgreSQL) novos dados, ignorando agent_data.
+
+Se não for informada uma nova data → usar agent_data para economizar consultas no banco.
+
+Hoje, no seu código, está acontecendo o seguinte problema:
+
+Mesmo que você passe uma nova data, ele primeiro tenta pegar o agent_data da tabela customer.
+
+Só se não encontrar ele refaz.
+
+Mas como seu banco não estava gravando corretamente, acabava buscando no banco "de verdade".
+
+Ou seja, estava errado desde o começo: deveria ser "priorizar dados novos se houver datas passadas".
+
+
+ seu projeto: vendas, marketing, campanhas de redes sociais... mudam todo dia).
+
+Assim, o modelo sempre vê os dados atuais.
+
+E em projetos RAG, a regra é: "busque a informação certa, no tempo certo".
+
+→ Como seu projeto usa dados dinâmicos, criar novo agent é melhor.
+
+🚀 Melhor solução para o seu caso
+✅ A melhor solução, prática e limpa para você agora:
+
+Comentar a parte que:
+
+tenta buscar agent_data;
+
+tenta armazenar agent_data;
+
+Sempre criar um agent novo baseado nas informações atuais.
+
+✅ Assim:
+
+Não precisa alterar banco de dados.
+
+Seu projeto fica mais confiável (dados corretos sempre).
+
+Fica mais alinhado ao padrão de RAG moderno.
+
+
+para rodar: uvicorn main:app --reload
