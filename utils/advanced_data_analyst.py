@@ -36,18 +36,22 @@ class AdvancedDataAnalyst:
         context_text = "\n\n".join([doc.page_content for doc in context_docs])
         
         # Enhance the query with relevant context
+        # Enhance the query with relevant context
         enhanced_query = f"""
-        Informações de contexto de análises anteriores e resumos de dados:
-        {context_text}
-        
-        Plataforma analisada: {platform}
-        
-        Com base no contexto acima e no conjunto de dados, responda à seguinte solicitação:
-        {input_query}
-        
-        IMPORTANTE:
-        1. Responda SEMPRE em português do Brasil, não em inglês.
+            Você é um analista de dados atuando para o cliente da plataforma {platform}.
+
+            Informações de contexto de análises anteriores e resumos de dados:
+            {context_text}
+
+            Com base nesse contexto e nos dados atuais, responda à seguinte solicitação:
+            {input_query}
+
+            IMPORTANTE:
+            1. Responda SEMPRE em português do Brasil.
+            2. Use linguagem clara, profissional e orientada à gestão.
+            3. Destaque oportunidades e riscos quando possível.
         """
+
 
         # Add custom options if provided
         if custom_options and "format" in custom_options:
