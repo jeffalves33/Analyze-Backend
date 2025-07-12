@@ -1,4 +1,4 @@
-# Prompt básico para o sistema analista
+# ===== Arquivo: utils/prompts/system_prompts.py =====
 BASE_ANALYST_PROMPT = """
 Você é um analista sênior de marketing e inteligência de dados. Seu trabalho é gerar análises estratégicas, claras e acionáveis a partir de métricas de performance digital, campanhas e presença online dos clientes.
 
@@ -21,27 +21,27 @@ Diretrizes obrigatórias:
 PLATFORM_PROMPTS = {
     'google_analytics': """
         Métricas mais relevantes do Google Analytics para análise de comportamento de usuários:
-        - `traffic_direct`: visitas espontâneas ao site, sem intermediação
-        - `search_volume`: volume de buscas relacionadas à marca ou produtos
-        - `impressions`: impressões em mecanismos de busca
-        - `traffic_organic_search`: visitas vindas de resultados não pagos
-        - `traffic_organic_social`: visitas oriundas de redes sociais de forma orgânica
+        - `google_analytics_traffic_direct`: visitas espontâneas ao site, sem intermediação
+        - `google_analytics_search_volume`: volume de buscas relacionadas à marca ou produtos
+        - `google_analytics_impressions`: impressões em mecanismos de busca
+        - `google_analytics_traffic_organic_search`: visitas vindas de resultados não pagos
+        - `google_analytics_traffic_organic_social`: visitas oriundas de redes sociais de forma orgânica
 
         Use essas métricas para avaliar eficiência de canais, performance de conteúdo e comportamento de jornada.
     """,
     'facebook': """
         Indicadores principais do Facebook para análise de performance:
-        - `page_impressions`: total de vezes que a página foi exibida
-        - `page_impressions_unique`: alcance real (pessoas únicas)
-        - `page_follows`: crescimento de seguidores
+        - `facebook_page_impressions`: total de vezes que a página foi exibida
+        - `facebook_page_impressions_unique`: alcance real (pessoas únicas)
+        - `facebook_page_follows`: crescimento de seguidores
 
         Avalie crescimento, engajamento e impacto orgânico versus pago.
     """,
     'instagram': """
         Indicadores-chave do Instagram para avaliar engajamento e performance:
-        - `reach`: total de contas alcançadas
-        - `views`: visualizações de conteúdo (stories, reels, posts)
-        - `followers`: evolução da base de seguidores
+        - `instagram_reach`: total de contas alcançadas
+        - `instagram_views`: visualizações de conteúdo (stories, reels, posts)
+        - `instagram_followers`: evolução da base de seguidores
 
         Use esses dados para analisar formatos com melhor resultado e avaliar consistência de presença digital.
     """
@@ -92,15 +92,30 @@ ANALYSIS_TEMPLATES = {
     """
 }
 
+def get_platform_prompt(platforms: list[str]) -> str:
+    # Junta todos os prompts específicos
+    platform_sections = []
+    for platform in platforms:
+        specific = PLATFORM_PROMPTS.get(platform, "")
+        if specific:
+            section = f"\n---\n**Plataforma: {platform}**\n{specific.strip()}"
+            platform_sections.append(section)
 
-def get_platform_prompt(platform: str) -> str:
-    platform_specific = PLATFORM_PROMPTS.get(platform, "")
-    return f"{BASE_ANALYST_PROMPT}\n\nVocê está analisando dados da plataforma: {platform}.\n{platform_specific}"
+    # Retorna o prompt base com os blocos das plataformas
+    return f"{BASE_ANALYST_PROMPT.strip()}\n\nVocê está analisando dados das seguintes plataformas:\n{', '.join(platforms)}.\n{''.join(platform_sections)}"
 
-def get_analysis_prompt(analysis_type: str, platform: str, date_filter: str = "") -> str:
+def get_analysis_prompt(analysis_type: str, platforms: list[str], date_filter: str = "") -> str:
     template = ANALYSIS_TEMPLATES.get(
-        analysis_type.lower(), 
-        "Analise os dados da plataforma {platform}{date_filter} e forneça insights e recomendações."
+        analysis_type.lower(),
+        "Analise os dados da plataforma {platforms}{date_filter} e forneça insights e recomendações."
     )
-    
-    return template.format(platform=platform, date_filter=date_filter)
+
+    # Formatação de plataformas para texto legível
+    if len(platforms) == 1:
+        platform_text = platforms[0]
+    elif len(platforms) == 2:
+        platform_text = f"{platforms[0]} e {platforms[1]}"
+    else:
+        platform_text = f"{', '.join(platforms[:-1])} e {platforms[-1]}"
+
+    return template.format(platform=platform_text, platforms=platform_text, date_filter=date_filter)

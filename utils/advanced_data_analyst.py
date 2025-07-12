@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from datetime import datetime
 
 # LangChain imports
@@ -30,15 +30,14 @@ class AdvancedDataAnalyst:
         # Cache para armazenar agentes em memória
         self.clients_cache = {}
             
-    def _enhanced_agent_invoke(self, agent, retriever, client_id, platform, input_query, custom_options=None):
+    def _enhanced_agent_invoke(self, agent, retriever, client_id, platforms_str, input_query, custom_options=None):
         # Primeiro, obtenha o contexto relevante do banco de dados vetorial
         context_docs = retriever.get_relevant_documents(input_query)
         context_text = "\n\n".join([doc.page_content for doc in context_docs])
         
         # Enhance the query with relevant context
-        # Enhance the query with relevant context
         enhanced_query = f"""
-            Você é um analista de dados atuando para o cliente da plataforma {platform}.
+            Você é um analista de dados atuando para o cliente da(s) plataforma(s) {platforms_str}.
 
             Informações de contexto de análises anteriores e resumos de dados:
             {context_text}
@@ -62,32 +61,33 @@ class AdvancedDataAnalyst:
             result = agent.invoke({"input": enhanced_query})
 
             # Store the query and result in the vector database for future reference
-            self.vector_db.store_analysis_in_vectordb(client_id, input_query, result.get("output", ""), platform)
+            self.vector_db.store_analysis_in_vectordb(client_id, input_query, result.get("output", ""), platforms_str)
 
             return result
         except Exception as e:
             return {"output": f"Ocorreu um erro durante a análise: {str(e)}"}
 
-    def _create_invoke_function(self, agent, retriever, client_id, platform):
+    def _create_invoke_function(self, agent, retriever, client_id, platforms_str):
         def invoke_func(input_query, custom_options=None):
-            return self._enhanced_agent_invoke(agent, retriever, client_id, platform, input_query, custom_options)
+            return self._enhanced_agent_invoke(agent, retriever, client_id, platforms_str, input_query, custom_options)
         return invoke_func
 
-    def get_client_agent(self, client_id: str, platform: str, 
+    def get_client_agent(self, client_id: str, platforms: List[str], 
                        start_date: Optional[str] = None, 
                        end_date: Optional[str] = None, 
                        force_new: bool = False) -> Any:
         # Verifique se devemos criar um novo agente
+        platforms_str = ", ".join(platforms)
         if not force_new:
             # Primeira verificação no cache de memória
-            cache_key = f"{client_id}_{platform}"
+            cache_key = f"{client_id}_{platforms_str}"
             if cache_key in self.clients_cache:
                 cache_data = self.clients_cache[cache_key]
                 return self._create_invoke_function(
                     cache_data["agent_obj"], 
                     cache_data["retriever"], 
                     client_id,
-                    platform
+                    platforms_str
                 )
 
             # Tenta buscar agent_data no banco
@@ -100,12 +100,29 @@ class AdvancedDataAnalyst:
             #         client_id,
             #         platform
             #     )
-
-
         # Se precisarmos criar um novo agente
         # Obtenha dados do cliente do banco de dados com filtragem de data
-        df = self.relational_db.get_client_data(client_id, platform, start_date, end_date)
+        #df = self.relational_db.get_client_data(client_id, platform, start_date, end_date)
+        dfs = []
+        for platform in platforms:
+            df = self.relational_db.get_client_data(client_id, platform, start_date, end_date)
 
+            # Prefixa colunas, exceto 'data'
+            df = df.rename(columns={col: f"{platform}_{col}" for col in df.columns if col != "data"})
+
+            dfs.append(df)
+
+        # Começa com o primeiro DataFrame
+        merged_df = dfs[0]
+        # Faz merge com os outros DataFrames pela coluna "data"
+        for df in dfs[1:]:
+            merged_df = pd.merge(merged_df, df, how='outer', on='data')
+        # Ordena por data, se quiser
+        merged_df = merged_df.sort_values(by="data").reset_index(drop=True)
+        cols = merged_df.columns.tolist()
+        cols.insert(0, cols.pop(cols.index('data')))
+        merged_df = merged_df[cols]
+        #print(merged_df)
         # Set up vector database
         vectordb = self.vector_db.create_or_load_vector_db(client_id)
         retriever = vectordb.as_retriever(
@@ -121,8 +138,9 @@ class AdvancedDataAnalyst:
         )
 
         # Get platform-specific prompt
-        platform_system_prompt = get_platform_prompt(platform)
+        platform_system_prompt = get_platform_prompt(platforms)
 
+        #print("platform_system_prompt: ", platform_system_prompt)
         # Create pandas dataframe agent
         agent = create_pandas_dataframe_agent(
             llm=llm,
@@ -152,16 +170,16 @@ class AdvancedDataAnalyst:
         }
 
         # Store in memory cache
-        cache_key = f"{client_id}_{platform}"
+        cache_key = f"{client_id}_{platforms_str}"
         self.clients_cache[cache_key] = agent_data
 
         # Store in database
-        #self.relational_db.store_client_agent(client_id, platform, agent_data)
+        #self.relational_db.store_client_agent(client_id, platforms, agent_data)
 
         # Return invoke function directly
-        return self._create_invoke_function(agent, retriever, client_id, platform)
+        return self._create_invoke_function(agent, retriever, client_id, platforms_str)
 
-    def run_analysis(self, client_id: str, platform: str, analysis_type: str, 
+    def run_analysis(self, client_id: str, platforms: List[str], analysis_type: str, 
                custom_query: Optional[str] = None,
                start_date: Optional[str] = None, end_date: Optional[str] = None,
                output_format: str = "detalhado") -> Dict:
@@ -181,10 +199,10 @@ class AdvancedDataAnalyst:
             query = custom_query
         else:
             # Obter análise de prompts do módulo importado
-            query = get_analysis_prompt(analysis_type, platform, date_filter)
+            query = get_analysis_prompt(analysis_type, platforms, date_filter)
 
         # Obtenha a função de invocação do agente
-        invoke_func = self.get_client_agent(client_id, platform, start_date, end_date)
+        invoke_func = self.get_client_agent(client_id, platforms, start_date, end_date)
 
         # Configure custom options
         options = {
@@ -200,7 +218,7 @@ class AdvancedDataAnalyst:
             # Package the results
             return {
                 "client_id": client_id,
-                "platform": platform,
+                "platform": platforms,
                 "analysis_type": analysis_type,
                 "query": query,
                 "result": result.get("output", "Nenhum resultado gerado"),
@@ -211,7 +229,7 @@ class AdvancedDataAnalyst:
         except Exception as e:
             return {
                 "client_id": client_id,
-                "platform": platform,
+                "platform": platforms,
                 "analysis_type": analysis_type,
                 "query": query,
                 "result": f"Falha na análise: {str(e)}",

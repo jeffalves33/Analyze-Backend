@@ -102,7 +102,7 @@ class VectorDBManager:
         
         return summary_texts
 
-    def store_analysis_in_vectordb(self, client_id: str, query: str, result: str, platform: str) -> None:
+    def store_analysis_in_vectordb(self, client_id: str, query: str, result: str, platforms_str: str) -> None:
         from datetime import datetime
         
         # Prepare document
@@ -112,7 +112,7 @@ class VectorDBManager:
             metadata={
                 "type": "analysis",
                 "client_id": str(client_id),
-                "platform": platform,
+                "platform": platforms_str,
                 "timestamp": timestamp,
                 "query": query
             }
