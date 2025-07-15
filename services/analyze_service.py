@@ -9,11 +9,11 @@ class AnalyzeService:
     @classmethod
     def run_analysis(cls, request):
         return cls.analyst.run_analysis(
+            agency_id=request.agency_id,
             client_id=request.client_id,
             platforms=request.platforms,
             analysis_type=request.analysis_type,
             start_date=request.start_date,
             end_date=request.end_date,
-            output_format=request.output_format,
-            custom_query=request.custom_query
+            output_format=request.output_format
         )

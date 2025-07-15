@@ -4,10 +4,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 class AnalyzeRequest(BaseModel):
-    client_id: int
+    agency_id: str
+    client_id: str
     platforms: List[str]
-    analysis_type: str  # descriptive, predictive, prescriptive
+    analysis_type: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     output_format: Optional[str] = "detalhado"
-    custom_query: Optional[str] = None

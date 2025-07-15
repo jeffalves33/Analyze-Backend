@@ -1,9 +1,7 @@
 # utils/db/relational_db.py
-import os
 import pandas as pd
-import sqlalchemy
 from sqlalchemy import create_engine, text
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 import base64
 import pickle
 
