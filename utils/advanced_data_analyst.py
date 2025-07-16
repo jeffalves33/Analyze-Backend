@@ -48,11 +48,9 @@ class AdvancedDataAnalyst:
             3. Destaque oportunidades e riscos quando possível.
             4. Considere as melhores práticas globais, processos da agência e histórico do cliente.
         """
-        print("3. _enhanced_agent_invoke: enhanced_query => ", enhanced_query)
         # Run the agent with the enhanced query
         try:
             result = agent.invoke({"input": enhanced_query})
-            print("4. _enhanced_agent_invoke: result => ", result)
             # MODIFICAÇÃO: Armazena apenas resumo conciso da análise
             self.vector_db.store_analysis_summary(
                 agency_id=agency_id,
@@ -92,7 +90,6 @@ class AdvancedDataAnalyst:
                 )
 
         # Cria novo agente
-        print("\n\n== cria um novo agente ==\n\n")
         dfs = []
         for platform in platforms:
             df = self.relational_db.get_client_data(client_id, platform, start_date, end_date)
@@ -175,7 +172,6 @@ class AdvancedDataAnalyst:
         # Preparar consulta com base no tipo de análise  -> aqui que é responsável por retornar a análise
         # inserir agency_id aqui já que o contexto também diz respeito a agência
         query = get_analysis_prompt(analysis_type, platforms, date_filter)
-        print("\n\n 1. run_analysis: query => ", query)
 
         # Obtenha a função de invocação do agente
         invoke_func = self.get_client_agent(agency_id, client_id, platforms, start_date, end_date)

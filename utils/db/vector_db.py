@@ -203,7 +203,6 @@ class VectorDBManager:
         ]
         
         for content, doc_type in documents_data:
-            print(f"content: {content} - doc_type: {doc_type}")
             metadata = base_metadata.copy()
             metadata["doc_type"] = doc_type
             metadata["tags"] = ["dados", "sumario", platform]
