@@ -12,7 +12,7 @@ app = FastAPI(title="Análise de Dados API", version="1.0")
 # Configuração de CORS para permitir acesso do seu frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.hokoainalytics.com.br"],  # Deixe '*' para testes locais
+    allow_origins=["*"],  # Deixe '*' para testes locais
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
