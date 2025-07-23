@@ -12,7 +12,7 @@ class ChatService:
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     def generate_chat_response(self, client_id: int, prompt: str, history: list):
-        vectordb = self.vector_db_manager.create_or_load_vector_db(client_id)
+        vectordb = self.vector_db_manager.create_or_load_vector_db(str(client_id))
 
         retriever = vectordb.as_retriever(
             search_type="mmr",
