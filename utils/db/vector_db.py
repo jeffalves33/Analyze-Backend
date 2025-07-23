@@ -90,8 +90,10 @@ class VectorDBManager:
                   main_category: Optional[str] = None,
                   subcategory: Optional[str] = None) -> None:
         """Armazena documento no banco vetorial com metadata estruturada"""
-        
+
         # Validações
+        if not content or content.strip() == "":
+            raise ValueError("Conteúdo do documento não pode estar vazio")
         if scope in ["agency", "client"] and not agency_id:
             raise ValueError("agency_id é obrigatório para scope 'agency' ou 'client'")
         if scope == "client" and not client_id:

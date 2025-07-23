@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.analyzes_router import router as analyzes_router
 from routers.chat_router import router as chat_router
+from routers.documents_router import router as documents_router
 
 app = FastAPI(title="Análise de Dados API", version="1.0")
 
@@ -21,6 +22,8 @@ app.add_middleware(
 # Inclui as rotas do router
 app.include_router(analyzes_router)
 app.include_router(chat_router)
+app.include_router(documents_router)
+
 
 # Endpoint de teste
 @app.get("/")
