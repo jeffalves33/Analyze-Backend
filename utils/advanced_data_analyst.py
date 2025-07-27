@@ -34,12 +34,32 @@ class AdvancedDataAnalyst:
 
     def _enhanced_agent_invoke(self, agent, agency_id, client_id, platforms_str, input_query):
         """Invoca o agente com contexto hierárquico aprimorado"""
+        try:
+            # Busca contexto no vector database (mesmo padrão do chat)
+            vectordb = self.vector_db.create_or_load_vector_db(client_id, agency_id)
+            retriever = vectordb.as_retriever(
+                search_type="mmr",
+                search_kwargs={"k": 5, "fetch_k": 10}
+            )
+            context_docs = retriever.invoke(input_query)
+            context_text = "\n\n".join([doc.page_content for doc in context_docs])
+            
+            # Se não encontrou contexto, define como vazio
+            if not context_text.strip():
+                context_text = "Nenhum contexto histórico relevante encontrado."
+
+        except Exception as e:
+            # Em caso de erro na busca, continua sem contexto
+            context_text = f"Erro ao buscar contexto histórico: {str(e)}"
 
         # Enhance the query with relevant context
         enhanced_query = f"""
             Você é um analista de dados atuando para o cliente da(s) plataforma(s) {platforms_str}.
 
-            Com base nesse contexto e nos dados atuais, responda à seguinte solicitação:
+            CONTEXTO HISTÓRICO RELEVANTE:
+            {context_text}
+
+            Com base nesse contexto histórico e nos dados atuais, responda à seguinte solicitação:
             {input_query}
 
             IMPORTANTE:
@@ -47,11 +67,14 @@ class AdvancedDataAnalyst:
             2. Use linguagem clara, profissional e orientada à gestão.
             3. Destaque oportunidades e riscos quando possível.
             4. Considere as melhores práticas globais, processos da agência e histórico do cliente.
+            5. Se houver informações relevantes no contexto histórico, mencione-as na sua análise.
         """
+
         # Run the agent with the enhanced query
         try:
             result = agent.invoke({"input": enhanced_query})
-            # MODIFICAÇÃO: Armazena apenas resumo conciso da análise
+            
+            # Armazena apenas resumo conciso da análise
             self.vector_db.store_analysis_summary(
                 agency_id=agency_id,
                 client_id=client_id,
