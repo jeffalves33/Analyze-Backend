@@ -43,7 +43,7 @@ class VectorDBManager:
         else:
             raise ValueError(f"Scope inválido: {scope}")
     
-    def create_or_load_vector_db(self, client_id: str, force_reload: bool = False) -> PineconeVectorStore:
+    def create_or_load_vector_db(self, customer_id:str, client_id: str, force_reload: bool = False) -> PineconeVectorStore:
         """Mantém compatibilidade com código existente - assume scope 'client'"""
         # Para compatibilidade, extrai agency_id do client_id se possível
         # Assumindo formato "agencia_cliente" ou similar
@@ -55,8 +55,8 @@ class VectorDBManager:
             # Fallback: usa o client_id como agency_id também
             agency_id = client_id
             actual_client_id = client_id
-        
-        return self.get_vector_db(scope="client", agency_id=agency_id, client_id=actual_client_id, force_reload=force_reload)
+
+        return self.get_vector_db(scope="client", agency_id=client_id, client_id=customer_id, force_reload=force_reload)
     
     def get_vector_db(self, scope: Literal["global", "agency", "client"], 
                      agency_id: Optional[str] = None, 
