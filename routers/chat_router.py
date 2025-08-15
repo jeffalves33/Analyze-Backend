@@ -7,6 +7,7 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     customer_id: int
+    client_name: str
     client_id: int
     prompt: str
     history: list[dict] = []
@@ -18,6 +19,7 @@ async def chat_endpoint(request: ChatRequest):
     try:
         response = chat_service.generate_chat_response(
             customer_id=request.customer_id,
+            client_name=request.client_name,
             client_id=request.client_id,
             prompt=request.prompt,
             history=request.history
