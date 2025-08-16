@@ -48,7 +48,7 @@ class ChatService:
         9. NUNCA mencione IDs, informações técnicas do sistema ou estrutura interna
 
         Contexto de agênte:
-        Considere que esteja sempre nos ajudando com um cliente em específico. Nesse caso é o cliente: '{client_name}'.
+        Considere que esteja sempre nos ajudando com um cliente em específico. Nesse caso é o cliente: {client_name}.
 
         Contexto relevante do cliente:
         {context_text}

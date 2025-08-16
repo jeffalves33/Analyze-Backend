@@ -9,7 +9,9 @@ class DocumentScope(str, Enum):
 
 class UploadType(str, Enum):
     text = "text"
-    file = "file"
+    pdf = "pdf"
+    txt = "txt"
+    csv = "csv"
 
 class DocumentRequest(BaseModel):
     documentScope: DocumentScope
