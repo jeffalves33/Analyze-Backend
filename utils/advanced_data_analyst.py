@@ -1,235 +1,413 @@
-# ===== Arquivo: utils/advanced_data_analyst.py =====
+from __future__ import annotations
 
-import os
-import pandas as pd
-import numpy as np
-from typing import Dict, Optional, Any, List
+"""
+Advanced Data Analyst (refatorado – integração com seus módulos)
+---------------------------------------------------------------
+- Usa RelationalDBManager (RDS) para buscar dados
+- Usa VectorDBManager (Pinecone) para contexto
+- Remove execução perigosa; cálculos 100% determinísticos em Pandas
+- LLM só narra com base em JSON consolidado
+- Prompt com anatomia clara (Papel/Tarefa/Contexto/Raciocínio/Saída/Paradas)
+- Corrige import de ChatOpenAI (langchain-community)
+
+Requisitos de ambiente:
+- OPENAI_API_KEY definido (se usar narrativa por LLM)
+- Dependências de vector db configuradas (Pinecone/OpenAIEmbeddings) para contexto
+"""
+
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
+import os
 
-# LangChain imports
-from langchain.agents.agent_types import AgentType
-from langchain_experimental.agents import create_pandas_dataframe_agent
-from langchain_experimental.tools import PythonAstREPLTool
-from langchain_openai import ChatOpenAI
+import numpy as np
+import pandas as pd
 
-# utils/advanced_data_analyst.py
+# === Integrações do seu projeto ===
 from utils.db.relational_db import RelationalDBManager
 from utils.db.vector_db import VectorDBManager
 from utils.prompts.system_prompts import get_platform_prompt, get_analysis_prompt
 
+# ChatOpenAI (corrigido conforme aviso de depreciação)
+try:
+    from langchain_community.chat_models import ChatOpenAI  # pip install -U langchain-community
+except Exception:  # pragma: no cover
+    ChatOpenAI = None  # type: ignore
+
+
+# =============================
+# Helpers de normalização / core
+# =============================
+
+def _safe_prefix_cols(df: pd.DataFrame, platform: str) -> pd.DataFrame:
+    """Prefixa colunas por plataforma, sem duplicar prefixo e preservando 'data'."""
+    out = df.copy()
+    ren: Dict[str, str] = {}
+    for col in out.columns:
+        if col == "data":
+            continue
+        if not col.startswith(f"{platform}_"):
+            ren[col] = f"{platform}_{col}"
+    if ren:
+        out = out.rename(columns=ren)
+    return out
+
+
+def _prepare_dates(df: pd.DataFrame, tz: str = "America/Sao_Paulo") -> pd.DataFrame:
+    """Garante 'data' em timezone local e normalizada ao dia."""
+    out = df.copy()
+    # Assume UTC caso venha sem timezone
+    out["data"] = pd.to_datetime(out["data"], utc=True, errors="coerce").dt.tz_convert(tz).dt.normalize()
+    out = out.sort_values("data").reset_index(drop=True)
+    return out
+
+
+def _basic_kpis(df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict[str, float]]:
+    kpis: Dict[str, Dict[str, float]] = {}
+    for c in cols:
+        if c in df.columns:
+            s = df[c].fillna(0)
+            kpis[c] = {
+                "mean": float(s.mean()),
+                "median": float(s.median()),
+                "p95": float(s.quantile(0.95)),
+                "sum": float(s.sum()),
+                "non_zero_days": float((s > 0).sum()),
+                "days": float(s.shape[0]),
+            }
+    return kpis
+
+
+def _mad_anomalies(df: pd.DataFrame, col: str, zcut: float = 3.0) -> List[Dict[str, Any]]:
+    if col not in df.columns:
+        return []
+    s = df[col].fillna(0)
+    med = s.median()
+    mad = (s - med).abs().median()
+    if mad == 0:
+        return []
+    z = 0.6745 * (s - med) / mad
+    outliers = df.loc[z.abs() >= zcut, ["data", col]].copy()
+    return [{"data": str(row["data"].date()), col: float(row[col])} for _, row in outliers.iterrows()]
+
+
+def _dod_change_mean(df: pd.DataFrame, col: str) -> Optional[float]:
+    if col not in df.columns:
+        return None
+    s = df[col].fillna(0)
+    pct = s.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+    return float(pct.mean()) if not pct.empty else None
+
+
+def _weekday_breakdown(df: pd.DataFrame, col: str) -> List[Dict[str, Any]]:
+    if col not in df.columns or "data" not in df.columns:
+        return []
+    tmp = df.copy()
+    try:
+        tmp["weekday"] = tmp["data"].dt.day_name(locale="pt_BR")
+    except Exception:
+        wd_map = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"}
+        tmp["weekday"] = tmp["data"].dt.day_of_week.map(wd_map)
+    g = tmp.groupby("weekday")[col].agg(["mean", "sum", "median"]).reset_index()
+    records: List[Dict[str, Any]] = []
+    for _, row in g.iterrows():
+        records.append({
+            "weekday": str(row["weekday"]),
+            "mean": float(row["mean"]),
+            "sum": float(row["sum"]),
+            "median": float(row["median"]),
+        })
+    return records
+
+
+# =============================
+# Prompt de narrativa (engenharia)
+# =============================
+
+def build_narrative_prompt(platforms: List[str],
+                           analysis_query: str,
+                           context_text: str,
+                           summary_json: Dict[str, Any],
+                           output_format: str = "detalhado") -> str:
+    """Prompt com anatomia clara: Papel, Tarefa, Contexto, Raciocínio, Saída, Paradas."""
+    plataformas = ", ".join(platforms)
+    return f"""
+[PAPEL]
+Você é um analista de dados sênior de marketing digital, escrevendo para gestão e performance.
+
+[TAREFA]
+Responder à solicitação abaixo COM BASE EXCLUSIVA nos dados calculados (JSON) e no contexto histórico.
+Não calcule nada novo. Interprete, contextualize e recomende ações.
+
+[CONTEXTO]
+Plataformas: {plataformas}
+Histórico relevante (resumo de documentos do cliente/agência):
+{context_text}
+
+JSON de métricas e achados (use SOMENTE estes números):
+{summary_json}
+
+[INSTRUÇÕES DE RACIOCÍNIO]
+1) Não invente números. Se um número não estiver no JSON, diga que não está disponível.
+2) Explique tendências (altas/baixas) referindo-se a dias/intervalos presentes no JSON.
+3) Aponte anomalias (picos/vales) quando existirem no campo 'anomalies'.
+4) Proponha hipóteses plausíveis usando o histórico (context_text) apenas como contexto.
+5) Dê recomendações práticas atreladas às métricas observadas (ex.: ajustar criativo X, reforçar horário Y).
+6) Seja conciso, claro e em português do Brasil.
+
+[FORMA DE SAÍDA] ({output_format})
+- Título curto (1 linha)
+- Sumário executivo (3–5 bullets)
+- O que aconteceu (tendências + picos/vales, com datas)
+- Diagnóstico (hipóteses ancoradas no contexto)
+- Recomendações acionáveis (priorizadas)
+- Próximos passos e métricas a monitorar
+
+[CONDICOES DE PARADA]
+- Não calcule nada fora do JSON.
+- Não prometa tarefas futuras: apenas recomende.
+- Se faltar dado, explicite a lacuna e siga.
+    
+[SOLICITACAO]
+{analysis_query}
+"""
+
+
+# =============================
+# Config/DTOs
+# =============================
+
+@dataclass
+class AnalysisPayload:
+    agency_id: str
+    client_id: str
+    platforms: List[str]
+    analysis_type: str = "descriptive"
+    start_date: Optional[str] = None  # YYYY-MM-DD
+    end_date: Optional[str] = None    # YYYY-MM-DD
+    output_format: str = "detalhado"
+    analysis_query: Optional[str] = None  # permite sobrescrever a pergunta ao LLM
+
+
+# =============================
+# Classe principal
+# =============================
 
 class AdvancedDataAnalyst:
-    
-    def __init__(self, openai_api_key: str = None, pinecone_api_key: str = None, db_connection_string: str = None):
-        # Carregar configurações
-        self.openai_api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
-        self.pinecone_api_key = pinecone_api_key or os.getenv('PINECONE_API_KEY')
-        
-        # Inicializar gerenciadores de banco de dados
-        self.relational_db = RelationalDBManager(db_connection_string)
-        self.vector_db = VectorDBManager(self.pinecone_api_key, self.openai_api_key)
-        
-        # Cache para armazenar agentes em memória
-        self.clients_cache = {}
+    def __init__(self,
+                 vector_db: Optional[VectorDBManager] = None,
+                 relational_db: Optional[RelationalDBManager] = None,
+                 openai_api_key: Optional[str] = None,
+                 pinecone_api_key: Optional[str] = None,
+                 ):
+        # Injeta dependências reais ou cria com variáveis de ambiente
+        self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        self.vector_db = vector_db or VectorDBManager(
+            pinecone_api_key=pinecone_api_key or os.getenv("PINECONE_API_KEY", ""),
+            openai_api_key=self.openai_api_key or ""
+        )
+        self.rel_db = relational_db or RelationalDBManager()
+        self.clients_cache: Dict[str, Dict[str, Any]] = {}
 
-    def _enhanced_agent_invoke(self, agent, agency_id, client_id, platforms_str, input_query):
-        """Invoca o agente com contexto hierárquico aprimorado"""
-        try:
-            # Busca contexto no vector database (mesmo padrão do chat)
-            vectordb = self.vector_db.create_or_load_vector_db(client_id, agency_id)
-            retriever = vectordb.as_retriever(
-                search_type="mmr",
-                search_kwargs={"k": 5, "fetch_k": 10}
-            )
-            context_docs = retriever.invoke(input_query)
-            context_text = "\n\n".join([doc.page_content for doc in context_docs])
-            
-            # Se não encontrou contexto, define como vazio
-            if not context_text.strip():
-                context_text = "Nenhum contexto histórico relevante encontrado."
-
-        except Exception as e:
-            # Em caso de erro na busca, continua sem contexto
-            context_text = f"Erro ao buscar contexto histórico: {str(e)}"
-
-        # Enhance the query with relevant context
-        enhanced_query = f"""
-            Você é um analista de dados atuando para o cliente da(s) plataforma(s) {platforms_str}.
-
-            CONTEXTO HISTÓRICO RELEVANTE:
-            {context_text}
-
-            Com base nesse contexto histórico e nos dados atuais, responda à seguinte solicitação:
-            {input_query}
-
-            IMPORTANTE:
-            1. Responda SEMPRE em português do Brasil.
-            2. Use linguagem clara, profissional e orientada à gestão.
-            3. Destaque oportunidades e riscos quando possível.
-            4. Considere as melhores práticas globais, processos da agência e histórico do cliente.
-            5. Se houver informações relevantes no contexto histórico, mencione-as na sua análise.
+    # --------- Data loading ---------
+    def _load_platform_df(self,
+                          agency_id: str,
+                          client_id: str,
+                          platform: str,
+                          start_date: Optional[str],
+                          end_date: Optional[str]) -> pd.DataFrame:
         """
-
-        # Run the agent with the enhanced query
+        Usa RelationalDBManager.get_client_data para obter dados (coluna obrigatória 'data').
+        """
         try:
-            result = agent.invoke({"input": enhanced_query})
-            
-            # Armazena apenas resumo conciso da análise
-            self.vector_db.store_analysis_summary(
-                agency_id=agency_id,
+            df = self.rel_db.get_client_data(
                 client_id=client_id,
-                query=input_query,
-                platforms=platforms_str.split(", ")
+                platform=platform,
+                start_date=start_date,
+                end_date=end_date,
             )
+        except Exception:
+            # Se não houver dados, devolve DF vazio com 'data'
+            return pd.DataFrame({"data": []})
 
-            return result
-        except Exception as e:
-            return {"output": f"Ocorreu um erro durante a análise: {str(e)}"}
+        if df is None or df.empty:
+            return pd.DataFrame({"data": []})
 
-    def _create_invoke_function(self, agent, agency_id, client_id, platforms_str):
-        """Cria função de invocação simplificada"""
-        def invoke_func(input_query):
-            return self._enhanced_agent_invoke(agent, agency_id, client_id, platforms_str, input_query)
-        return invoke_func
+        df = _safe_prefix_cols(df, platform)
+        df = _prepare_dates(df)
+        return df
 
-    def get_client_agent(self, agency_id: str, client_id: str, platforms: List[str], 
-                       start_date: Optional[str] = None, 
-                       end_date: Optional[str] = None, 
-                       force_new: bool = False) -> Any:
-        """Obtém agente do cliente com suporte à nova arquitetura"""
+    def _merge_platform_dfs(self, dfs: List[pd.DataFrame]) -> pd.DataFrame:
+        if not dfs:
+            return pd.DataFrame({"data": []})
+        merged = dfs[0]
+        for add in dfs[1:]:
+            merged = pd.merge(merged, add, on="data", how="outer")
+        merged = merged.sort_values("data").reset_index(drop=True)
+        return merged
 
-        platforms_str = ", ".join(platforms)
+    # --------- Deterministic analytics ---------
+    def _compute_summary(self, merged_df: pd.DataFrame, platforms: List[str]) -> Dict[str, Any]:
+        all_cols = merged_df.columns.tolist()
+        metric_cols: List[str] = [c for c in all_cols if c != "data"]
 
-        # Verifica cache se não for forçar novo
-        if not force_new:
-            cache_key = f"{client_id}_{platforms_str}"
-            if cache_key in self.clients_cache:
-                cache_data = self.clients_cache[cache_key]
-                return self._create_invoke_function(
-                    cache_data["agent_obj"],
-                    agency_id,
-                    client_id,
-                    platforms_str
-                )
+        preferred_bases = ("reach", "views", "impressions", "followers", "likes", "comments", "saves", "shares")
+        candidatos: List[str] = []
+        for base in preferred_bases:
+            for p in platforms:
+                pc = f"{p}_{base}"
+                if pc in merged_df.columns:
+                    candidatos.append(pc)
+        if not candidatos:
+            candidatos = metric_cols
 
-        # Cria novo agente
-        dfs = []
-        for platform in platforms:
-            df = self.relational_db.get_client_data(client_id, platform, start_date, end_date)
+        summary: Dict[str, Any] = {
+            "period": {
+                "start": str(merged_df["data"].min().date()) if not merged_df.empty else None,
+                "end": str(merged_df["data"].max().date()) if not merged_df.empty else None,
+            },
+            "kpis": _basic_kpis(merged_df, candidatos),
+            "anomalies": {c: _mad_anomalies(merged_df, c) for c in candidatos},
+            "trends": {f"{c}_dod_mean": _dod_change_mean(merged_df, c) for c in candidatos},
+            "segments": {f"{c}_by_weekday": _weekday_breakdown(merged_df, c) for c in candidatos},
+            "meta": {"platforms": platforms, "columns": all_cols},
+        }
+        return summary
 
-            # Prefixa colunas, exceto 'data'
-            df = df.rename(columns={col: f"{platform}_{col}" for col in df.columns if col != "data"})
-            dfs.append(df)
-
-        # Faz merge dos DataFrames
-        merged_df = dfs[0]
-        for df in dfs[1:]:
-            merged_df = pd.merge(merged_df, df, how='outer', on='data')
-        
-        # Ordena por data e reorganiza colunas
-        merged_df = merged_df.sort_values(by="data").reset_index(drop=True)
-        cols = merged_df.columns.tolist()
-        cols.insert(0, cols.pop(cols.index('data')))
-        merged_df = merged_df[cols]
-        # Gera e armazena sumário dos dados
-        #summary_docs = self.vector_db.generate_data_summary(merged_df, client_id, platforms_str)
-
-        # Create LLM instance with system prompt
-        llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.2,
-            api_key=self.openai_api_key
+    # --------- Narrative (LLM) ---------
+    def _make_narrative(self,
+                        platforms: List[str],
+                        analysis_query: str,
+                        context_text: str,
+                        summary: Dict[str, Any],
+                        output_format: str = "detalhado") -> str:
+        prompt = build_narrative_prompt(
+            platforms=platforms,
+            analysis_query=analysis_query,
+            context_text=context_text,
+            summary_json=summary,
+            output_format=output_format,
         )
+        if ChatOpenAI is None:
+            return (
+                "[Aviso: ChatOpenAI indisponível no ambiente]\n\n"
+                "Resumo JSON:\n" + str(summary) + "\n\n"
+                "Solicitação:\n" + analysis_query + "\n\n"
+                "(Nesta etapa, um LLM redigiria a narrativa com base no JSON e contexto acima.)"
+            )
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.3, api_key=self.openai_api_key)
+        return llm.invoke(prompt).content  # type: ignore
 
-        # Get platform-specific prompt
-        platform_system_prompt = get_platform_prompt(platforms)
+    # --------- Public API ---------
+    def get_client_agent(self,
+                         agency_id: str,
+                         client_id: str,
+                         platforms: List[str],
+                         start_date: Optional[str],
+                         end_date: Optional[str]) -> Callable[[str], Dict[str, Any]]:
+        # 1) Carregar e normalizar DFs por plataforma
+        dfs: List[pd.DataFrame] = []
+        for p in platforms:
+            dfp = self._load_platform_df(agency_id, client_id, p, start_date, end_date)
+            if not dfp.empty:
+                dfs.append(dfp)
+        merged_df = self._merge_platform_dfs(dfs)
 
-        # Create pandas dataframe agent
-        agent = create_pandas_dataframe_agent(
-            llm=llm,
-            df=merged_df,  # Usa merged_df ao invés de df
-            agent_type=AgentType.OPENAI_FUNCTIONS,
-            verbose=True,
-            extra_tools=[PythonAstREPLTool()],
-            prefix=platform_system_prompt,
-            include_df_in_prompt=True,
-            max_iterations=8,
-            max_execution_time=60,
-            allow_dangerous_code=True
-        )
+        # 2) Computar resumo determinístico
+        summary = self._compute_summary(merged_df, platforms)
 
-        # Create agent data to store => aqui é onde cria o agent com essas informações e metadata's. preciso de detalhamento
-        agent_data = {
-            "agent_obj": agent,
+        # 3) Cache por cliente + plataformas + período
+        cache_key = f"{client_id}_{'_'.join(platforms)}_{summary['period']['start']}_{summary['period']['end']}"
+        self.clients_cache[cache_key] = {
             "df": merged_df,
-            "timestamp": datetime.now().timestamp(),
-            "metadata": {
-                "client_id": client_id,
-                "agency_id": agency_id,
-                "platforms": platforms,
-                "row_count": len(merged_df),
-                "column_count": len(merged_df.columns)
-            }
+            "summary": summary,
+            "ts": datetime.now().isoformat(),
         }
 
-        # Store in memory cache
-        #cache_key = f"{client_id}_{platforms_str}"
-        #self.clients_cache[cache_key] = agent_data
+        # 4) Retornar função de invocação que busca contexto + narra
+        def _invoke(analysis_query: str, output_format: str = "detalhado") -> Dict[str, Any]:
+            # 4.1) Buscar contexto histórico no Pinecone e incluir prompt de plataforma
+            try:
+                vectordb = self.vector_db.create_or_load_vector_db(customer_id=client_id, client_id=agency_id)
+                retriever = vectordb.as_retriever(search_type="mmr", search_kwargs={"k": 5, "fetch_k": 10})
+                if hasattr(retriever, "invoke"):
+                    docs = retriever.invoke(analysis_query)
+                else:
+                    docs = retriever.get_relevant_documents(analysis_query)  # type: ignore
+                retrieved_text = "\n\n".join([getattr(d, "page_content", str(d)) for d in docs])
+            except Exception as e:  # pragma: no cover
+                retrieved_text = f"Erro ao buscar contexto histórico: {str(e)}"
 
-        # Return invoke function directly
-        return self._create_invoke_function(agent, agency_id, client_id, platforms_str)
+            # Prompt específico das plataformas (do seu system_prompts)
+            platform_hint = get_platform_prompt(platforms)
+            context_text = platform_hint + "\n\n" + retrieved_text if retrieved_text else platform_hint
 
-    def run_analysis(self, agency_id: str, client_id: str, platforms: List[str], analysis_type: str,
-               start_date: Optional[str] = None, end_date: Optional[str] = None,
-               output_format: str = "detalhado") -> Dict:
+            # 4.2) Gerar narrativa (LLM apenas redige)
+            analysis_text = self._make_narrative(platforms, analysis_query, context_text, summary, output_format)
+            return {"summary": summary, "analysis": analysis_text}
 
-        # Preparar cláusula de filtro de data
-        date_filter = ""
-        if start_date and end_date:
-            date_filter = f" para o período de {start_date} até {end_date}"
-        elif start_date:
-            date_filter = f" a partir de {start_date}"
-        elif end_date:
-            date_filter = f" até {end_date}"
+        return _invoke
 
-        # Preparar consulta com base no tipo de análise  -> aqui que é responsável por retornar a análise
-        # inserir agency_id aqui já que o contexto também diz respeito a agência
-        query = get_analysis_prompt(analysis_type, platforms, date_filter)
+    def run_analysis(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Executa o fluxo completo:
+        - Carrega/une dados por plataforma (RDS via RelationalDBManager)
+        - Calcula métricas e achados determinísticos (Pandas)
+        - Usa LLM só para narrar (sem calcular)
+        - Usa VectorDBManager para recuperar contexto
+        """
+        start_time = datetime.now()
 
-        # Obtenha a função de invocação do agente
-        invoke_func = self.get_client_agent(agency_id, client_id, platforms, start_date, end_date)
+        ap = AnalysisPayload(
+            agency_id=str(payload.get("agency_id")),
+            client_id=str(payload.get("client_id")),
+            platforms=[str(p) for p in payload.get("platforms", [])],
+            analysis_type=str(payload.get("analysis_type", "descriptive")),
+            start_date=payload.get("start_date"),
+            end_date=payload.get("end_date"),
+            output_format=str(payload.get("output_format", "detalhado")),
+            analysis_query=payload.get("analysis_query"),
+        )
 
-        # Configure custom options
-        options = {
-            "format": output_format,
-            "analysis_type": analysis_type
-        }
+        invoke_func = self.get_client_agent(
+            agency_id=ap.agency_id,
+            client_id=ap.client_id,
+            platforms=ap.platforms,
+            start_date=ap.start_date,
+            end_date=ap.end_date,
+        )
 
-        # Run the analysis
+        # Se não vier pergunta específica, monta uma a partir dos seus templates
+        if not ap.analysis_query:
+            date_filter = ""
+            if ap.start_date and ap.end_date:
+                date_filter = f" no período de {ap.start_date} a {ap.end_date}"
+            elif ap.start_date:
+                date_filter = f" a partir de {ap.start_date}"
+            elif ap.end_date:
+                date_filter = f" até {ap.end_date}"
+            ap.analysis_query = get_analysis_prompt(ap.analysis_type, ap.platforms, date_filter)
+
         try:
-            start_time = datetime.now()
-            result = invoke_func(query)
-            end_time = datetime.now()
+            result = invoke_func(ap.analysis_query, ap.output_format)
+            status = "success"
+            error = None
+        except Exception as e:  # pragma: no cover
+            result = {"summary": None, "analysis": f"Falha na análise: {str(e)}"}
+            status = "error"
+            error = str(e)
 
-            # Package the results
-            return {
-                "client_id": client_id,
-                "platforms": platforms,
-                "analysis_type": analysis_type,
-                "query": query,
-                "result": result.get("output", "Nenhum resultado gerado"),
-                "execution_time": (end_time - start_time).total_seconds(),
-                "timestamp": datetime.now().isoformat(),
-                "status": "success"
-            }
-        except Exception as e:
-            return {
-                "client_id": client_id,
-                "platforms": platforms,
-                "analysis_type": analysis_type,
-                "query": query,
-                "result": f"Falha na análise: {str(e)}",
-                "timestamp": datetime.now().isoformat(),
-                "status": "error",
-                "error": str(e)
-            }
+        end_time = datetime.now()
+        return {
+            "agency_id": ap.agency_id,
+            "client_id": ap.client_id,
+            "platforms": ap.platforms,
+            "analysis_type": ap.analysis_type,
+            "query": ap.analysis_query,
+            "summary": result.get("summary"),
+            "result": result.get("analysis"),
+            "execution_time": (end_time - start_time).total_seconds(),
+            "timestamp": datetime.now().isoformat(),
+            "status": status,
+            "error": error,
+        }

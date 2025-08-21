@@ -8,12 +8,8 @@ class AnalyzeService:
 
     @classmethod
     def run_analysis(cls, request):
-        return cls.analyst.run_analysis(
-            agency_id=request.agency_id,
-            client_id=request.client_id,
-            platforms=request.platforms,
-            analysis_type=request.analysis_type,
-            start_date=request.start_date,
-            end_date=request.end_date,
-            output_format=request.output_format
-        )
+        try:
+            payload = request.model_dump()
+        except AttributeError:
+            payload = request.dict()
+        return cls.analyst.run_analysis(payload)
