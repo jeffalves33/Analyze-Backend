@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 """
-Advanced Data Analyst (refatorado – integração com seus módulos)
----------------------------------------------------------------
-- Usa RelationalDBManager (RDS) para buscar dados
-- Usa VectorDBManager (Pinecone) para contexto
-- Remove execução perigosa; cálculos 100% determinísticos em Pandas
-- LLM só narra com base em JSON consolidado
-- Prompt com anatomia clara (Papel/Tarefa/Contexto/Raciocínio/Saída/Paradas)
-- Corrige import de ChatOpenAI (langchain-community)
-
-Requisitos de ambiente:
-- OPENAI_API_KEY definido (se usar narrativa por LLM)
-- Dependências de vector db configuradas (Pinecone/OpenAIEmbeddings) para contexto
+Advanced Data Analyst (refatorado – prompts orquestrados)
+--------------------------------------------------------
+- RDS: RelationalDBManager (busca dados)
+- Pinecone: VectorDBManager (contexto histórico)
+- Pandas: cálculos determinísticos (LLM não calcula)
+- Prompts: centralizados em utils/prompts/system_prompts.py
 """
 
 from dataclasses import dataclass
@@ -26,7 +20,11 @@ import pandas as pd
 # === Integrações do seu projeto ===
 from utils.db.relational_db import RelationalDBManager
 from utils.db.vector_db import VectorDBManager
-from utils.prompts.system_prompts import get_platform_prompt, get_analysis_prompt
+from utils.prompts.system_prompts import (
+    get_platform_prompt,
+    get_analysis_prompt,
+    build_narrative_prompt,
+)
 
 # ChatOpenAI (corrigido conforme aviso de depreciação)
 try:
@@ -67,38 +65,23 @@ PREFERRED_BASES = (
 # Helpers de normalização / core
 # =============================
 
-def _safe_prefix_cols(df: pd.DataFrame, platform: str) -> pd.DataFrame:
-    """Prefixa colunas por plataforma, sem duplicar prefixo e preservando 'data'."""
-    out = df.copy()
-    ren: Dict[str, str] = {}
-    for col in out.columns:
-        if col == "data":
-            continue
-        if not col.startswith(f"{platform}_"):
-            ren[col] = f"{platform}_{col}"
-    if ren:
-        out = out.rename(columns=ren)
-    return out
-
 def _normalize_platform_df(df: pd.DataFrame, platform: str) -> pd.DataFrame:
     out = df.copy()
 
-    # 2.1) Uniformizar nome da coluna de data
-    # Aceite "data" ou "date"; se vier outra, trate aqui.
+    # 1) Uniformizar nome da coluna de data
     if "data" not in out.columns and "date" in out.columns:
         out = out.rename(columns={"date": "data"})
 
-    # 2.2) Remover campos técnicos repetitivos que não serão agregados por dia
+    # 2) Remover campos técnicos que não serão agregados por dia
     drop_candidates = [c for c in out.columns if c.lower() in {"id_customer", "agency_id", "client_id"}]
     if drop_candidates:
         out = out.drop(columns=drop_candidates, errors="ignore")
 
-    # 2.3) Aplicar mapeamento canônico específico da plataforma
+    # 3) Aplicar mapeamento canônico específico da plataforma
     schema = PLATFORM_SCHEMA.get(platform, {})
-    # Apenas colunas reconhecidas são renomeadas; o resto permanece como está
     out = out.rename(columns={orig: canon for orig, canon in schema.items() if orig in out.columns})
 
-    # 2.4) Prefixar com o nome da plataforma, preservando 'data'
+    # 4) Prefixar com o nome da plataforma, preservando 'data'
     ren = {}
     for col in out.columns:
         if col == "data":
@@ -110,15 +93,22 @@ def _normalize_platform_df(df: pd.DataFrame, platform: str) -> pd.DataFrame:
 
     return out
 
-
 def _prepare_dates(df: pd.DataFrame, tz: str = "America/Sao_Paulo") -> pd.DataFrame:
-    """Garante 'data' em timezone local e normalizada ao dia."""
+    """
+    Garante 'data' normalizada ao dia (sem deslocar quando a origem é apenas YYYY-MM-DD).
+    - Se vier timezone-aware, converte para tz local e remove tz.
+    - Se vier naive (somente data), apenas normaliza.
+    """
     out = df.copy()
-    # Assume UTC caso venha sem timezone
-    out["data"] = pd.to_datetime(out["data"], utc=True, errors="coerce").dt.tz_convert(tz).dt.normalize()
+    s = pd.to_datetime(out["data"], errors="coerce")
+
+    # Se a série tiver timezone (alguns itens podem ser tz-aware, outros não)
+    if getattr(s.dt, "tz", None) is not None:
+        s = s.dt.tz_convert(tz).dt.tz_localize(None)
+
+    out["data"] = s.dt.normalize()
     out = out.sort_values("data").reset_index(drop=True)
     return out
-
 
 def _basic_kpis(df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict[str, float]]:
     kpis: Dict[str, Dict[str, float]] = {}
@@ -134,7 +124,6 @@ def _basic_kpis(df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict[str, float]
                 "days": float(s.shape[0]),
             }
     return kpis
-
 
 def _mad_anomalies(df: pd.DataFrame, col: str, zcut: float = 3.0) -> List[Dict[str, Any]]:
     if col not in df.columns:
@@ -179,59 +168,6 @@ def _weekday_breakdown(df: pd.DataFrame, col: str) -> List[Dict[str, Any]]:
 
 
 # =============================
-# Prompt de narrativa (engenharia)
-# =============================
-
-def build_narrative_prompt(platforms: List[str],
-                           analysis_query: str,
-                           context_text: str,
-                           summary_json: Dict[str, Any],
-                           output_format: str = "detalhado") -> str:
-    """Prompt com anatomia clara: Papel, Tarefa, Contexto, Raciocínio, Saída, Paradas."""
-    plataformas = ", ".join(platforms)
-    return f"""
-[PAPEL]
-Você é um analista de dados sênior de marketing digital, escrevendo para gestão e performance.
-
-[TAREFA]
-Responder à solicitação abaixo COM BASE EXCLUSIVA nos dados calculados (JSON) e no contexto histórico.
-Não calcule nada novo. Interprete, contextualize e recomende ações.
-
-[CONTEXTO]
-Plataformas: {plataformas}
-Histórico relevante (resumo de documentos do cliente/agência):
-{context_text}
-
-JSON de métricas e achados (use SOMENTE estes números):
-{summary_json}
-
-[INSTRUÇÕES DE RACIOCÍNIO]
-1) Não invente números. Se um número não estiver no JSON, diga que não está disponível.
-2) Explique tendências (altas/baixas) referindo-se a dias/intervalos presentes no JSON.
-3) Aponte anomalias (picos/vales) quando existirem no campo 'anomalies'.
-4) Proponha hipóteses plausíveis usando o histórico (context_text) apenas como contexto.
-5) Dê recomendações práticas atreladas às métricas observadas (ex.: ajustar criativo X, reforçar horário Y).
-6) Seja conciso, claro e em português do Brasil.
-
-[FORMA DE SAÍDA] ({output_format})
-- Título curto (1 linha)
-- Sumário executivo (3–5 bullets)
-- O que aconteceu (tendências + picos/vales, com datas)
-- Diagnóstico (hipóteses ancoradas no contexto)
-- Recomendações acionáveis (priorizadas)
-- Próximos passos e métricas a monitorar
-
-[CONDICOES DE PARADA]
-- Não calcule nada fora do JSON.
-- Não prometa tarefas futuras: apenas recomende.
-- Se faltar dado, explicite a lacuna e siga.
-    
-[SOLICITACAO]
-{analysis_query}
-"""
-
-
-# =============================
 # Config/DTOs
 # =============================
 
@@ -240,11 +176,13 @@ class AnalysisPayload:
     agency_id: str
     client_id: str
     platforms: List[str]
-    analysis_type: str = "descriptive"
+    analysis_type: str = "descriptive"  # 'descriptive' | 'predictive' | 'prescriptive' | 'general'
     start_date: Optional[str] = None  # YYYY-MM-DD
     end_date: Optional[str] = None    # YYYY-MM-DD
     output_format: str = "detalhado"
     analysis_query: Optional[str] = None  # permite sobrescrever a pergunta ao LLM
+    bilingual: bool = True  # redige mentalmente em EN e entrega PT-BR
+    granularity: str = "detalhada"
 
 
 # =============================
@@ -292,7 +230,7 @@ class AdvancedDataAnalyst:
             return pd.DataFrame({"data": []})
 
         df = _normalize_platform_df(df, platform)
-        df = _prepare_dates(df)        
+        df = _prepare_dates(df)
         return df
 
     def _merge_platform_dfs(self, dfs: List[pd.DataFrame]) -> pd.DataFrame:
@@ -309,7 +247,7 @@ class AdvancedDataAnalyst:
         all_cols = merged_df.columns.tolist()
         metric_cols = [c for c in all_cols if c != "data"]
 
-        # 4.1) Tente selecionar métricas canônicas por plataforma
+        # Selecionar métricas canônicas por plataforma
         candidatos: List[str] = []
         for base in PREFERRED_BASES:
             for p in platforms:
@@ -317,7 +255,6 @@ class AdvancedDataAnalyst:
                 if pc in merged_df.columns:
                     candidatos.append(pc)
 
-        # 4.2) Se nada foi encontrado (caso extremo), use todas as métricas disponíveis
         if not candidatos:
             candidatos = metric_cols
 
@@ -337,17 +274,22 @@ class AdvancedDataAnalyst:
     # --------- Narrative (LLM) ---------
     def _make_narrative(self,
                         platforms: List[str],
+                        analysis_type: str,
                         analysis_query: str,
                         context_text: str,
                         summary: Dict[str, Any],
-                        output_format: str = "detalhado") -> str:
+                        output_format: str = "detalhado",
+                        bilingual: bool = True) -> str:
         prompt = build_narrative_prompt(
             platforms=platforms,
+            analysis_type=analysis_type,
             analysis_query=analysis_query,
             context_text=context_text,
             summary_json=summary,
             output_format=output_format,
-        )
+            granularity=self.current_granularity if hasattr(self, "current_granularity") else "detalhada",
+            bilingual=bilingual,
+        )       
         if ChatOpenAI is None:
             return (
                 "[Aviso: ChatOpenAI indisponível no ambiente]\n\n"
@@ -364,7 +306,7 @@ class AdvancedDataAnalyst:
                          client_id: str,
                          platforms: List[str],
                          start_date: Optional[str],
-                         end_date: Optional[str]) -> Callable[[str], Dict[str, Any]]:
+                         end_date: Optional[str]) -> Callable[[str, str, bool], Dict[str, Any]]:
         # 1) Carregar e normalizar DFs por plataforma
         dfs: List[pd.DataFrame] = []
         for p in platforms:
@@ -385,7 +327,7 @@ class AdvancedDataAnalyst:
         }
 
         # 4) Retornar função de invocação que busca contexto + narra
-        def _invoke(analysis_query: str, output_format: str = "detalhado") -> Dict[str, Any]:
+        def _invoke(analysis_query: str, output_format: str = "detalhado", bilingual: bool = True) -> Dict[str, Any]:
             # 4.1) Buscar contexto histórico no Pinecone e incluir prompt de plataforma
             try:
                 vectordb = self.vector_db.create_or_load_vector_db(customer_id=client_id, client_id=agency_id)
@@ -398,12 +340,18 @@ class AdvancedDataAnalyst:
             except Exception as e:  # pragma: no cover
                 retrieved_text = f"Erro ao buscar contexto histórico: {str(e)}"
 
-            # Prompt específico das plataformas (do seu system_prompts)
-            platform_hint = get_platform_prompt(platforms)
-            context_text = platform_hint + "\n\n" + retrieved_text if retrieved_text else platform_hint
+            context_text = retrieved_text
 
             # 4.2) Gerar narrativa (LLM apenas redige)
-            analysis_text = self._make_narrative(platforms, analysis_query, context_text, summary, output_format)
+            analysis_text = self._make_narrative(
+                platforms=platforms,
+                analysis_type=self.current_analysis_type if hasattr(self, "current_analysis_type") else "descriptive",
+                analysis_query=analysis_query,
+                context_text=context_text,
+                summary=summary,
+                output_format=output_format,
+                bilingual=bilingual,
+            )
             return {"summary": summary, "analysis": analysis_text}
 
         return _invoke
@@ -427,7 +375,13 @@ class AdvancedDataAnalyst:
             end_date=payload.get("end_date"),
             output_format=str(payload.get("output_format", "detalhado")),
             analysis_query=payload.get("analysis_query"),
+            bilingual=bool(payload.get("bilingual", True)),
+            granularity=str(payload.get("granularity", payload.get("output_granularity", "detalhada"))),  # <-- NOVO
         )
+
+        # Guardar o tipo de análise corrente para o _invoke usar
+        self.current_analysis_type = ap.analysis_type
+        self.current_granularity = ap.granularity
 
         invoke_func = self.get_client_agent(
             agency_id=ap.agency_id,
@@ -437,7 +391,7 @@ class AdvancedDataAnalyst:
             end_date=ap.end_date,
         )
 
-        # Se não vier pergunta específica, monta uma a partir dos seus templates
+        # Se não vier pergunta específica, monta uma a partir dos templates
         if not ap.analysis_query:
             date_filter = ""
             if ap.start_date and ap.end_date:
@@ -447,9 +401,8 @@ class AdvancedDataAnalyst:
             elif ap.end_date:
                 date_filter = f" até {ap.end_date}"
             ap.analysis_query = get_analysis_prompt(ap.analysis_type, ap.platforms, date_filter)
-
         try:
-            result = invoke_func(ap.analysis_query, ap.output_format)
+            result = invoke_func(ap.analysis_query, ap.output_format, ap.bilingual)
             status = "success"
             error = None
         except Exception as e:  # pragma: no cover
