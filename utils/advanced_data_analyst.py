@@ -302,7 +302,6 @@ class AdvancedDataAnalyst:
         for add in dfs[1:]:
             merged = pd.merge(merged, add, on="data", how="outer")
         merged = merged.sort_values("data").reset_index(drop=True)
-        print("🚀 ~ merged: ", merged)
         return merged
 
     # --------- Deterministic analytics ---------
@@ -349,7 +348,6 @@ class AdvancedDataAnalyst:
             summary_json=summary,
             output_format=output_format,
         )
-        print("🚀 ~ analysus_query: ", analysis_query)
         if ChatOpenAI is None:
             return (
                 "[Aviso: ChatOpenAI indisponível no ambiente]\n\n"
@@ -377,7 +375,6 @@ class AdvancedDataAnalyst:
 
         # 2) Computar resumo determinístico
         summary = self._compute_summary(merged_df, platforms)
-        print("\n\n🚀 ~ summary: ", summary)
 
         # 3) Cache por cliente + plataformas + período
         cache_key = f"{client_id}_{'_'.join(platforms)}_{summary['period']['start']}_{summary['period']['end']}"
@@ -393,15 +390,11 @@ class AdvancedDataAnalyst:
             try:
                 vectordb = self.vector_db.create_or_load_vector_db(customer_id=client_id, client_id=agency_id)
                 retriever = vectordb.as_retriever(search_type="mmr", search_kwargs={"k": 5, "fetch_k": 10})
-                print("🚀 ~ retriever: ", retriever)
                 if hasattr(retriever, "invoke"):
                     docs = retriever.invoke(analysis_query)
-                    print("🚀 ~ 1docs: ", docs)
                 else:
                     docs = retriever.get_relevant_documents(analysis_query)  # type: ignore
-                    print("🚀 ~ 2docs: ", docs)
                 retrieved_text = "\n\n".join([getattr(d, "page_content", str(d)) for d in docs])
-                print("🚀 ~ retrieved_text: ", retrieved_text)
             except Exception as e:  # pragma: no cover
                 retrieved_text = f"Erro ao buscar contexto histórico: {str(e)}"
 
