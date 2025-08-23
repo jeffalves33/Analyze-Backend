@@ -35,6 +35,34 @@ except Exception:  # pragma: no cover
     ChatOpenAI = None  # type: ignore
 
 
+# === Mapeamento canônico por plataforma ===
+PLATFORM_SCHEMA = {
+    "instagram": {
+        # origem -> canônico
+        "reach": "reach",
+        "views": "views",
+        "followers": "followers",
+    },
+    "facebook": {
+        "page_impressions": "impressions",
+        "page_impressions_unique": "reach",
+        "page_follows": "followers",
+    },
+    "google_analytics": {
+        "impressions": "impressions",
+        "traffic_direct": "traffic_direct",
+        "traffic_organic_search": "traffic_organic_search",
+        "traffic_organic_social": "traffic_organic_social",
+        "search_volume": "search_volume",
+    },
+}
+# Métricas priorizadas (agora inclui GA)
+PREFERRED_BASES = (
+    "reach", "views", "impressions", "followers",
+    "traffic_direct", "traffic_organic_search", "traffic_organic_social", "search_volume"
+)
+
+
 # =============================
 # Helpers de normalização / core
 # =============================
@@ -50,6 +78,36 @@ def _safe_prefix_cols(df: pd.DataFrame, platform: str) -> pd.DataFrame:
             ren[col] = f"{platform}_{col}"
     if ren:
         out = out.rename(columns=ren)
+    return out
+
+def _normalize_platform_df(df: pd.DataFrame, platform: str) -> pd.DataFrame:
+    out = df.copy()
+
+    # 2.1) Uniformizar nome da coluna de data
+    # Aceite "data" ou "date"; se vier outra, trate aqui.
+    if "data" not in out.columns and "date" in out.columns:
+        out = out.rename(columns={"date": "data"})
+
+    # 2.2) Remover campos técnicos repetitivos que não serão agregados por dia
+    drop_candidates = [c for c in out.columns if c.lower() in {"id_customer", "agency_id", "client_id"}]
+    if drop_candidates:
+        out = out.drop(columns=drop_candidates, errors="ignore")
+
+    # 2.3) Aplicar mapeamento canônico específico da plataforma
+    schema = PLATFORM_SCHEMA.get(platform, {})
+    # Apenas colunas reconhecidas são renomeadas; o resto permanece como está
+    out = out.rename(columns={orig: canon for orig, canon in schema.items() if orig in out.columns})
+
+    # 2.4) Prefixar com o nome da plataforma, preservando 'data'
+    ren = {}
+    for col in out.columns:
+        if col == "data":
+            continue
+        if not col.startswith(f"{platform}_"):
+            ren[col] = f"{platform}_{col}"
+    if ren:
+        out = out.rename(columns=ren)
+
     return out
 
 
@@ -233,8 +291,8 @@ class AdvancedDataAnalyst:
         if df is None or df.empty:
             return pd.DataFrame({"data": []})
 
-        df = _safe_prefix_cols(df, platform)
-        df = _prepare_dates(df)
+        df = _normalize_platform_df(df, platform)
+        df = _prepare_dates(df)        
         return df
 
     def _merge_platform_dfs(self, dfs: List[pd.DataFrame]) -> pd.DataFrame:
@@ -244,20 +302,23 @@ class AdvancedDataAnalyst:
         for add in dfs[1:]:
             merged = pd.merge(merged, add, on="data", how="outer")
         merged = merged.sort_values("data").reset_index(drop=True)
+        print("🚀 ~ merged: ", merged)
         return merged
 
     # --------- Deterministic analytics ---------
     def _compute_summary(self, merged_df: pd.DataFrame, platforms: List[str]) -> Dict[str, Any]:
         all_cols = merged_df.columns.tolist()
-        metric_cols: List[str] = [c for c in all_cols if c != "data"]
+        metric_cols = [c for c in all_cols if c != "data"]
 
-        preferred_bases = ("reach", "views", "impressions", "followers", "likes", "comments", "saves", "shares")
+        # 4.1) Tente selecionar métricas canônicas por plataforma
         candidatos: List[str] = []
-        for base in preferred_bases:
+        for base in PREFERRED_BASES:
             for p in platforms:
                 pc = f"{p}_{base}"
                 if pc in merged_df.columns:
                     candidatos.append(pc)
+
+        # 4.2) Se nada foi encontrado (caso extremo), use todas as métricas disponíveis
         if not candidatos:
             candidatos = metric_cols
 
@@ -270,7 +331,7 @@ class AdvancedDataAnalyst:
             "anomalies": {c: _mad_anomalies(merged_df, c) for c in candidatos},
             "trends": {f"{c}_dod_mean": _dod_change_mean(merged_df, c) for c in candidatos},
             "segments": {f"{c}_by_weekday": _weekday_breakdown(merged_df, c) for c in candidatos},
-            "meta": {"platforms": platforms, "columns": all_cols},
+            "meta": {"platforms": platforms, "columns": all_cols, "selected_metrics": candidatos},
         }
         return summary
 
@@ -288,6 +349,7 @@ class AdvancedDataAnalyst:
             summary_json=summary,
             output_format=output_format,
         )
+        print("🚀 ~ analysus_query: ", analysis_query)
         if ChatOpenAI is None:
             return (
                 "[Aviso: ChatOpenAI indisponível no ambiente]\n\n"
@@ -315,6 +377,7 @@ class AdvancedDataAnalyst:
 
         # 2) Computar resumo determinístico
         summary = self._compute_summary(merged_df, platforms)
+        print("\n\n🚀 ~ summary: ", summary)
 
         # 3) Cache por cliente + plataformas + período
         cache_key = f"{client_id}_{'_'.join(platforms)}_{summary['period']['start']}_{summary['period']['end']}"
@@ -330,11 +393,15 @@ class AdvancedDataAnalyst:
             try:
                 vectordb = self.vector_db.create_or_load_vector_db(customer_id=client_id, client_id=agency_id)
                 retriever = vectordb.as_retriever(search_type="mmr", search_kwargs={"k": 5, "fetch_k": 10})
+                print("🚀 ~ retriever: ", retriever)
                 if hasattr(retriever, "invoke"):
                     docs = retriever.invoke(analysis_query)
+                    print("🚀 ~ 1docs: ", docs)
                 else:
                     docs = retriever.get_relevant_documents(analysis_query)  # type: ignore
+                    print("🚀 ~ 2docs: ", docs)
                 retrieved_text = "\n\n".join([getattr(d, "page_content", str(d)) for d in docs])
+                print("🚀 ~ retrieved_text: ", retrieved_text)
             except Exception as e:  # pragma: no cover
                 retrieved_text = f"Erro ao buscar contexto histórico: {str(e)}"
 
