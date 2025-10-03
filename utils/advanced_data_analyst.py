@@ -53,6 +53,10 @@ PLATFORM_SCHEMA = {
         "traffic_organic_social": "traffic_organic_social",
         "search_volume": "search_volume",
     },
+    "linkedin": {
+        "impressions": "impressions",
+        "followers": "followers"
+    }
 }
 # Métricas priorizadas (agora inclui GA)
 PREFERRED_BASES = (

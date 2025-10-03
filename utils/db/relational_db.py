@@ -27,6 +27,9 @@ class RelationalDBManager:
             ],
             'instagram': [
                 'reach', 'views', 'followers', 'data'
+            ],
+            'linkedin': [
+                'impressions', 'followers', 'data'
             ]
         }
     

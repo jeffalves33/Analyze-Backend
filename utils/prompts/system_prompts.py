@@ -52,6 +52,7 @@ PLATFORM_DISPLAY = {
     "instagram": "Instagram",
     "facebook": "Facebook",
     "google_analytics": "Google Analytics",
+    "linkedin": "LinkedIn"
 }
 
 BASE_LABELS = {
@@ -137,6 +138,16 @@ PLATFORM_PROMPTS: Dict[str, str] = {
         - Eficácia de canais e correlação com picos de mídia/rede social.
         - Sinais de intenção via Volume de Busca.
     """,
+    "linkedin": """
+        Métricas usuais no dataset:
+        - Impressões (LinkedIn)
+        - Seguidores (LinkedIn)
+
+         Pontos de leitura:
+        - Relação entre picos de alcance e visualizações.
+        - Sazonalidade por dia da semana (quando houver segmentos).
+        - Atenção a picos isolados (campanhas, criativos específicos).
+    """
 }
 
 def get_platform_prompt(platforms: List[str]) -> str:
@@ -338,9 +349,13 @@ def build_narrative_prompt(
 ) -> str:
 
     alias = {
-        "descricao":"descriptive","descritiva":"descriptive",
-        "preditiva":"predictive","prescritiva":"prescriptive",
-        "geral":"general","overall":"general","all":"general"
+        "descricao":"descriptive",
+        "descritiva":"descriptive",
+        "preditiva":"predictive",
+        "prescritiva":"prescriptive",
+        "geral":"general",
+        "overall":"general",
+        "all":"general"
     }
     key = alias.get((analysis_type or "descriptive").strip().lower(), analysis_type)
 
