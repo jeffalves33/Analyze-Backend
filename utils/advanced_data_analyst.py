@@ -1,23 +1,10 @@
 from __future__ import annotations
-
-"""
-Advanced Data Analyst (refatorado – prompts orquestrados)
---------------------------------------------------------
-- RDS: RelationalDBManager (busca dados)
-- Pinecone: VectorDBManager (contexto histórico)
-- Pandas: cálculos determinísticos (LLM não calcula)
-- Prompts: centralizados em utils/prompts/system_prompts.py
-"""
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 import os
-
 import numpy as np
 import pandas as pd
-
-# === Integrações do seu projeto ===
 from utils.db.relational_db import RelationalDBManager
 from utils.db.vector_db import VectorDBManager
 from utils.prompts.system_prompts import (
@@ -141,14 +128,12 @@ def _mad_anomalies(df: pd.DataFrame, col: str, zcut: float = 3.0) -> List[Dict[s
     outliers = df.loc[z.abs() >= zcut, ["data", col]].copy()
     return [{"data": str(row["data"].date()), col: float(row[col])} for _, row in outliers.iterrows()]
 
-
 def _dod_change_mean(df: pd.DataFrame, col: str) -> Optional[float]:
     if col not in df.columns:
         return None
     s = df[col].fillna(0)
     pct = s.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
     return float(pct.mean()) if not pct.empty else None
-
 
 def _weekday_breakdown(df: pd.DataFrame, col: str) -> List[Dict[str, Any]]:
     if col not in df.columns or "data" not in df.columns:
@@ -170,7 +155,6 @@ def _weekday_breakdown(df: pd.DataFrame, col: str) -> List[Dict[str, Any]]:
         })
     return records
 
-
 # =============================
 # Config/DTOs
 # =============================
@@ -180,6 +164,7 @@ class AnalysisPayload:
     agency_id: str
     client_id: str
     platforms: List[str]
+    analysis_focus: str = "panorama"  # "branding" | "negocio" | "conexao" | "panorama"
     analysis_type: str = "descriptive"  # 'descriptive' | 'predictive' | 'prescriptive' | 'general'
     start_date: Optional[str] = None  # YYYY-MM-DD
     end_date: Optional[str] = None    # YYYY-MM-DD
@@ -187,6 +172,9 @@ class AnalysisPayload:
     analysis_query: Optional[str] = None  # permite sobrescrever a pergunta ao LLM
     bilingual: bool = True  # redige mentalmente em EN e entrega PT-BR
     granularity: str = "detalhada"
+    voice_profile: str = "CMO"
+    decision_mode: str = "decision_brief"
+    narrative_style: str = "SCQA"
 
 
 # =============================
@@ -287,13 +275,18 @@ class AdvancedDataAnalyst:
         prompt = build_narrative_prompt(
             platforms=platforms,
             analysis_type=analysis_type,
+            analysis_focus=getattr(self, "analysis_focus", "panorama"),
             analysis_query=analysis_query,
             context_text=context_text,
             summary_json=summary,
             output_format=output_format,
             granularity=self.current_granularity if hasattr(self, "current_granularity") else "detalhada",
             bilingual=bilingual,
-        )       
+            voice_profile=getattr(self, "voice_profile", "CMO"),
+            decision_mode=getattr(self, "decision_mode", "decision_brief"),
+            narrative_style=getattr(self, "narrative_style", "SCQA"),
+        )
+        print(prompt)
         if ChatOpenAI is None:
             return (
                 "[Aviso: ChatOpenAI indisponível no ambiente]\n\n"
@@ -301,7 +294,7 @@ class AdvancedDataAnalyst:
                 "Solicitação:\n" + analysis_query + "\n\n"
                 "(Nesta etapa, um LLM redigiria a narrativa com base no JSON e contexto acima.)"
             )
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.3, api_key=self.openai_api_key)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0.45, api_key=self.openai_api_key)
         return llm.invoke(prompt).content  # type: ignore
 
     # --------- Public API ---------
@@ -333,18 +326,13 @@ class AdvancedDataAnalyst:
         # 4) Retornar função de invocação que busca contexto + narra
         def _invoke(analysis_query: str, output_format: str = "detalhado", bilingual: bool = True) -> Dict[str, Any]:
             # 4.1) Buscar contexto histórico no Pinecone e incluir prompt de plataforma
-            try:
-                vectordb = self.vector_db.create_or_load_vector_db(customer_id=client_id, client_id=agency_id)
-                retriever = vectordb.as_retriever(search_type="mmr", search_kwargs={"k": 5, "fetch_k": 10})
-                if hasattr(retriever, "invoke"):
-                    docs = retriever.invoke(analysis_query)
-                else:
-                    docs = retriever.get_relevant_documents(analysis_query)  # type: ignore
-                retrieved_text = "\n\n".join([getattr(d, "page_content", str(d)) for d in docs])
-            except Exception as e:  # pragma: no cover
-                retrieved_text = f"Erro ao buscar contexto histórico: {str(e)}"
-
-            context_text = retrieved_text
+            context_text = self.vector_db.retrieve_context_for_analysis(
+                query=analysis_query or "panorama do período",
+                scope="client",
+                agency_id=agency_id,
+                client_id=client_id,
+                k_total=8
+            )
 
             # 4.2) Gerar narrativa (LLM apenas redige)
             analysis_text = self._make_narrative(
@@ -361,31 +349,39 @@ class AdvancedDataAnalyst:
         return _invoke
 
     def run_analysis(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Executa o fluxo completo:
-        - Carrega/une dados por plataforma (RDS via RelationalDBManager)
-        - Calcula métricas e achados determinísticos (Pandas)
-        - Usa LLM só para narrar (sem calcular)
-        - Usa VectorDBManager para recuperar contexto
-        """
         start_time = datetime.now()
 
         ap = AnalysisPayload(
             agency_id=str(payload.get("agency_id")),
             client_id=str(payload.get("client_id")),
             platforms=[str(p) for p in payload.get("platforms", [])],
+            analysis_focus=str(payload.get("analysis_focus", "panorama")),
             analysis_type=str(payload.get("analysis_type", "descriptive")),
             start_date=payload.get("start_date"),
             end_date=payload.get("end_date"),
             output_format=str(payload.get("output_format", "detalhado")),
             analysis_query=payload.get("analysis_query"),
             bilingual=bool(payload.get("bilingual", True)),
-            granularity=str(payload.get("granularity", payload.get("output_granularity", "detalhada"))),  # <-- NOVO
+            granularity=str(payload.get("granularity", payload.get("output_granularity", "detalhada"))),
+            voice_profile=str(payload.get("voice_profile", "CMO")),
+            decision_mode=str(payload.get("decision_mode", "decision_brief")),
+            narrative_style=str(payload.get("narrative_style", "SCQA")),
         )
 
+        if ap.analysis_type.strip().lower() == "descriptive":
+            # garante que não caia em modo “brief” (prescritivo)
+            if ap.decision_mode == "decision_brief":
+                ap.decision_mode = "topicos"
+            # estilo “SCQA” é ok (organização), mas “piramide” também funciona; opcional manter.
+
+
         # Guardar o tipo de análise corrente para o _invoke usar
+        self.voice_profile = ap.voice_profile
+        self.decision_mode = ap.decision_mode
+        self.narrative_style = ap.narrative_style
         self.current_analysis_type = ap.analysis_type
         self.current_granularity = ap.granularity
+        self.analysis_focus = ap.analysis_focus
 
         invoke_func = self.get_client_agent(
             agency_id=ap.agency_id,

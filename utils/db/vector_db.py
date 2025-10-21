@@ -15,6 +15,94 @@ class VectorDBManager:
         self.embeddings = OpenAIEmbeddings(api_key=openai_api_key)
         self.main_index_name = "hokoainalytics"
     
+    def ingest_brand_platform(self, agency_id: str, text: str, tags: Optional[List[str]] = None):
+        """
+        Ingesta/atualiza o documento de plataforma de marca da agência.
+        'text' deve ser o conteúdo extraído do PDF (faça a extração no seu pipeline).
+        """
+        self.store_document(
+            content=text,
+            scope="agency",
+            doc_type="brand_platform",
+            source="brand_pdf",
+            agency_id=agency_id,
+            client_id=None,
+            tags=(tags or []) + ["voz", "tom", "proposta_valor", "guidelines"],
+            author="branding",
+            confidentiality="media",
+            main_category="brand",
+            subcategory="voice"
+        )
+
+    def _get_vectorstore(self, namespace: str) -> PineconeVectorStore:
+        idx = self._create_or_get_main_index()
+        return PineconeVectorStore(index_name=idx, embedding=self.embeddings, namespace=namespace, text_key="text")
+
+    def _assemble_context_block(self, docs: List[Document]) -> str:
+        """Concatena conteúdos com pequenas fichas de origem úteis à narrativa."""
+        lines = []
+        for d in docs:
+            md = d.metadata or {}
+            badge = f"[{md.get('doc_type','?')} • {md.get('source','?')} • {md.get('created_at','')} • ag:{md.get('agency_id')} cl:{md.get('client_id')}]"
+            lines.append(f"{badge}\n{d.page_content.strip()}\n")
+        return "\n---\n".join(lines)
+
+    def retrieve_context_for_analysis(
+        self,
+        query: str,
+        scope: Literal["agency", "client"],
+        agency_id: str,
+        client_id: Optional[str] = None,
+        k_total: int = 8
+    ) -> str:
+        """
+        Multi-pass retrieval priorizando:
+        1) Voz/objetivos (brand_platform, objetivos, brief)
+        2) Análises / relatórios recentes
+        3) Fallback geral
+        Usa MMR para reduzir redundância (fetch_k > k).
+        """
+        namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+        vs = self._get_vectorstore(namespace)
+
+        collected: List[Document] = []
+
+        # Passo 1 — marca/voz/objetivos (foco em agency)
+        brand_filter = {
+            "$and": [
+                {"doc_type": {"$in": ["brand_platform", "objetivos", "brief"]}},
+                {"agency_id": {"$eq": agency_id}}
+            ]
+        }
+        top_brand = vs.max_marginal_relevance_search(
+            query, k=min(3, k_total), fetch_k=25, lambda_mult=0.5, filter=brand_filter
+        )
+        collected.extend(top_brand)
+
+        # Passo 2 — análises/relatórios recentes (quando client)
+        if client_id:
+            report_filter = {
+                "$and": [
+                    {"doc_type": {"$in": ["analise", "relatorio"]}},
+                    {"agency_id": {"$eq": agency_id}},
+                    {"client_id": {"$eq": client_id}}
+                ]
+            }
+            k_left = max(0, k_total - len(collected))
+            if k_left > 0:
+                top_reports = vs.max_marginal_relevance_search(
+                    query, k=min(3, k_left), fetch_k=25, lambda_mult=0.5, filter=report_filter
+                )
+                collected.extend(top_reports)
+
+        # Passo 3 — fallback geral (sem filtro) se ainda faltar contexto
+        k_left = max(0, k_total - len(collected))
+        if k_left > 0:
+            fallback = vs.max_marginal_relevance_search(query, k=k_left, fetch_k=25, lambda_mult=0.5)
+            collected.extend(fallback)
+
+        return self._assemble_context_block(collected)
+
     def _create_or_get_main_index(self) -> str:
         """Cria ou obtém o índice principal do Pinecone"""
         if self.main_index_name not in [index.name for index in self.pc.list_indexes()]:
@@ -76,67 +164,52 @@ class VectorDBManager:
             namespace=namespace
         )
     
-    def store_document(self, 
-                  content: str,
-                  scope: Literal["global", "agency", "client"],
-                  doc_type: str,
-                  source: str,
-                  agency_id: Optional[str] = None,
-                  client_id: Optional[str] = None,
-                  tags: Optional[List[str]] = None,
-                  author: Optional[str] = None,
-                  confidentiality: str = "media",
-                  context: Optional[Dict[str, Any]] = None,
-                  main_category: Optional[str] = None,
-                  subcategory: Optional[str] = None) -> None:
-        """Armazena documento no banco vetorial com metadata estruturada"""
+    def store_document(
+        self, 
+        content: str,
+        scope: Literal["global", "agency", "client"],
+        doc_type: str,
+        source: str,
+        agency_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        author: Optional[str] = None,
+        confidentiality: str = "media",
+        context: Optional[Dict[str, Any]] = None,
+        main_category: Optional[str] = None,
+        subcategory: Optional[str] = None
+    ) -> None:
+        """Armazena documento no banco vetorial com metadata estruturada e consistente"""
 
-        # Validações
-        if not content or content.strip() == "":
-            raise ValueError("Conteúdo do documento não pode estar vazio")
-        if scope in ["agency", "client"] and not agency_id:
-            raise ValueError("agency_id é obrigatório para scope 'agency' ou 'client'")
-        if scope == "client" and not client_id:
-            raise ValueError("client_id é obrigatório para scope 'client'")
-        
-        # Monta metadata
+        namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+        idx = self._create_or_get_main_index()  # mantém sua lógica atual
+
+        # -- METADATA padronizada para habilitar filtros:
         metadata = {
-            "scope": scope,
-            "doc_type": doc_type,
-            "source": source,
-            "timestamp": datetime.now().isoformat(),
-            "confidentiality": confidentiality
+            "scope": scope,                      # "global" | "agency" | "client"
+            "doc_type": doc_type,                # ex: "brand_platform", "objetivos", "analise", "relatorio", "brief"
+            "source": source,                    # ex: "brand_pdf", "sistema", "upload_usuario"
+            "agency_id": agency_id,
+            "client_id": client_id,
+            "tags": tags or [],
+            "author": author or "desconhecido",
+            "confidentiality": confidentiality,  # baixa | media | alta
+            "main_category": main_category,      # ex: "brand", "performance", "planejamento"
+            "subcategory": subcategory,          # ex: "voice", "guidelines", "kpis"
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "context": context or {},
         }
-        
-        # Adiciona IDs conforme escopo
-        if scope in ["agency", "client"]:
-            metadata["agency_id"] = agency_id
-        if scope == "client":
-            metadata["client_id"] = client_id
-            
-        # Adiciona campos opcionais
-        if tags:
-            metadata["tags"] = tags
-        if author:
-            metadata["author"] = author
-        if context:
-            # MODIFICAÇÃO: Adiciona context como campos separados na metadata
-            for key, value in context.items():
-                metadata[f"context_{key}"] = str(value)
-        if main_category:
-            metadata["main_category"] = main_category
-        if subcategory:
-            metadata["subcategory"] = subcategory
-        
-        # Cria documento
-        document = Document(page_content=content, metadata=metadata)
-        
-        # Obtém vector DB do escopo correto
-        vectordb = self.get_vector_db(scope, agency_id, client_id)
-        
-        # Adiciona documento
-        vectordb.add_documents([document])
-    
+
+        # **Importante**: Pinecone aceita filtros por metadados; manter chaves simples/flat ajuda.
+        # Upsert via LangChain:
+        vectorstore = PineconeVectorStore(
+            index_name=idx, 
+            embedding=self.embeddings, 
+            namespace=namespace, 
+            text_key="text"
+        )
+        vectorstore.add_texts(texts=[content], metadatas=[metadata])
+
     def generate_data_summary(self, df: pd.DataFrame, client_id: str, platform: str) -> List[Document]:
         """Gera sumário de dados - atualizado para nova estrutura"""
         # Extrai agency_id do client_id
