@@ -182,7 +182,7 @@ class VectorDBManager:
         """Armazena documento no banco vetorial com metadata estruturada e consistente"""
 
         namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
-        idx = self._create_or_get_main_index()  # mantém sua lógica atual
+        idx = self._create_or_get_main_index()
 
         # -- METADATA padronizada para habilitar filtros:
         metadata = {
@@ -197,8 +197,11 @@ class VectorDBManager:
             "main_category": main_category,      # ex: "brand", "performance", "planejamento"
             "subcategory": subcategory,          # ex: "voice", "guidelines", "kpis"
             "created_at": datetime.utcnow().isoformat() + "Z",
-            "context": context or {},
         }
+
+        if context and "customer_name" in context:
+            metadata["ctx_customer_name"] = str(context["customer_name"])
+
 
         # **Importante**: Pinecone aceita filtros por metadados; manter chaves simples/flat ajuda.
         # Upsert via LangChain:
