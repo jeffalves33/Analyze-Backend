@@ -1,8 +1,7 @@
 # ===== Arquivo: routers/analyzes_router.py =====
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from models.analyze_request import AnalyzeRequest
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from services.analyze_service import AnalyzeService
 
@@ -11,7 +10,8 @@ router = APIRouter(prefix="/analyze", tags=["Analyze"])
 @router.post("/")
 async def analyze(request: AnalyzeRequest):
     try:
-        result = AnalyzeService.run_analysis(request)
-        return JSONResponse(content=jsonable_encoder(result), status_code=200)
+        service_resp = AnalyzeService.run_analysis(request)
+        result_text = (service_resp or {}).get("result") or ""
+        return JSONResponse(content={"result": result_text}, status_code=200)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise JSONResponse(content={"message": str(e)}, status_code=500)
