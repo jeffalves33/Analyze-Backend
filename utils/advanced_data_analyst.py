@@ -410,7 +410,7 @@ class AdvancedDataAnalyst:
             error = str(e)
 
         end_time = datetime.now()
-        return {
+        response_json_return = {
             "agency_id": ap.agency_id,
             "client_id": ap.client_id,
             "platforms": ap.platforms,
@@ -423,3 +423,5 @@ class AdvancedDataAnalyst:
             "status": status,
             "error": error,
         }
+        print(response_json_return)
+        return response_json_return
