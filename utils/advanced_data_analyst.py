@@ -423,5 +423,4 @@ class AdvancedDataAnalyst:
             "status": status,
             "error": error,
         }
-        print(response_json_return)
         return response_json_return
