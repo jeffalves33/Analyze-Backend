@@ -286,7 +286,6 @@ class AdvancedDataAnalyst:
             decision_mode=getattr(self, "decision_mode", "decision_brief"),
             narrative_style=getattr(self, "narrative_style", "SCQA"),
         )
-        print(prompt)
         if ChatOpenAI is None:
             return (
                 "[Aviso: ChatOpenAI indisponível no ambiente]\n\n"
