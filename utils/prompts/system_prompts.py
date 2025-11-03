@@ -191,7 +191,11 @@ ANALYSIS_TEMPLATES = {
     """,
     "general": """
         [ANÁLISE GERAL — INTEGRADA]
-        Ordem de entrega: Descritiva → Preditiva → Prescritiva (resumidas).
+        Objetivo: combinar em uma única visão executiva o que aconteceu, para onde tende e o que fazer.
+        Estrutura:
+        ## 1. Visão Descritiva Integrada (2–3 linhas)
+        ## 2. Leitura Preditiva (cenário mais provável + principais riscos)
+        ## 3. Recomendações-Chave (3–5 bullets ligados diretamente aos pontos 1 e 2)
     """,
 }
 
@@ -261,6 +265,7 @@ FEWSHOTS = {
      "## ⚠ Sinais de Atenção\n"
      "- Gap entre visualizações e seguidores: atenção sem conversão.")
   ],
+
   ("descriptive","negocio"): [
     ("Usuário","Descritiva de Instagram com foco de negócio."),
     ("Assistente",
@@ -279,22 +284,42 @@ FEWSHOTS = {
      "## ⚠ Sinais de Atenção\n"
      "- Estagnação de base eleva CAC futuro.")
   ],
+
+  ("descriptive","panorama"): [
+    ("Usuário","Quero uma descritiva geral das principais plataformas no período."),
+    ("Assistente",
+     "## 🎯 O Que Aconteceu\n"
+     "O período consolidou um padrão estável de presença, com alguns picos pontuais em canais diferentes.\n"
+     "## 📊 A História dos Dados\n"
+     "### Movimentos Estratégicos\n"
+     "- Instagram concentrou momentos de atenção em poucos dias de maior alcance.\n"
+     "- Google Analytics mostra tráfego direto e orgânico crescendo de forma gradual.\n"
+     "### Contexto e Significado\n"
+     "- A marca já conquistou um espaço consistente, mas ainda há espaço para acelerar conversão entre canais.\n"
+     "## 💡 Insights Estratégicos\n"
+     "1) A audiência responde bem quando há coerência entre pauta e canal.\n"
+     "2) Falta capturar melhor o tráfego que chega para convertê-lo em base proprietária.\n"
+     "3) A combinação entre social + busca tende a ser o motor de crescimento.\n"
+     "## ⚠ Sinais de Atenção\n"
+     "- Dependência de poucos formatos ou dias para concentrar boa parte do resultado.")
+  ],
+
   ("predictive","panorama"): [
     ("Usuário","Quero cenários para o próximo mês (geral)."),
     ("Assistente",
      "## 🎯 Cenário Mais Provável\n"
-     "Manter ritmo atual com picos em janelas conhecidas, sem breakthrough sem replicação da fórmula.\n"
+     "A tendência é manter o ritmo recente, com variação moderada em torno do patamar atual.\n"
      "## 📈 Tendências\n"
-     "- Momentum positivo quando formato/mensagem certo reaparece.\n"
-     "- Risco de fadiga se repetir sem evolução.\n"
+     "- Momentum positivo quando formatos e mensagens validados reaparecem.\n"
+     "- Risco de acomodação se não houver pequenos testes contínuos.\n"
      "## 🔮 Três Cenários\n"
-     "- Otimista (25%): novo patamar com picos semanais; gatilhos: 2x fórmula/semana.\n"
-     "- Realista (55%): leve alta; premissa: replicação parcial.\n"
-     "- Atenção (20%): regressão à média; sinais: queda de salvamentos.\n"
+     "- Otimista (30%): consolidação em um patamar acima do atual; gatilhos: repetição intencional dos conteúdos de maior resposta.\n"
+     "- Realista (50%): leve crescimento sustentado; premissas: manutenção da cadência e da qualidade média.\n"
+     "- Atenção (20%): regressão ao patamar anterior; sinais: queda de engajamento e estabilização do alcance.\n"
      "## ⚡ Janelas\n"
-     "- Primeiras 2 semanas do mês; semana de BF.\n"
+     "- Primeiras semanas do mês e períodos com campanhas sazonais.\n"
      "## 🎪 Monitorar\n"
-     "- Picos quinzenais; dias fortes; crescimento de base.")
+     "- Evolução da base, relação entre alcance e conversão e resposta a novos testes de formato.")
   ],
   ("prescriptive","conexao"): [
     ("Usuário","Plano de ação integrado."),
@@ -314,24 +339,64 @@ FEWSHOTS = {
      "## ⚠ Riscos & Contramedidas\n"
      "- Fadiga: evoluir 1 elemento por semana.")
   ],
+  ("prescriptive","negocio"): [
+    ("Usuário","Quero um plano de ação focado em resultado de negócio."),
+    ("Assistente",
+     "## 🎯 Direcionamento\n"
+     "Transformar a atenção atual em receita previsível, priorizando canais e formatos que já provaram retorno.\n"
+     "## 🚀 Plano de Ação Priorizado (3 iniciativas)\n"
+     "- P1: Otimizar funil de conversão nas páginas de destino (owner Growth, 30 dias, investimento médio).\n"
+     "- P2: Concentrar mídia e esforço criativo nos dias/canais de maior eficiência observada; medir CPL e CPA.\n"
+     "- P3: Criar rotina de testes A/B quinzenais em criativos e ofertas para reduzir CAC.\n"
+     "## ⚡ Quick Wins\n"
+     "- Ajustar imediatamente CTAs dos conteúdos de melhor performance para capturar leads ou vendas.\n"
+     "## 💰 Otimização\n"
+     "- Reduzir investimento em canais de baixa resposta e realocar para os que geram melhor relação custo/resultado.\n"
+     "## 📊 Metas\n"
+     "- Aumentar a taxa de conversão e reduzir CAC no próximo ciclo.\n"
+     "## ⚠ Riscos & Contramedidas\n"
+     "- Superdependência de um único canal: manter pelo menos uma alternativa em teste constante.")
+  ],
+  ("general","panorama"): [
+    ("Usuário","Quero uma análise geral integrada do período."),
+    ("Assistente",
+     "## 1. Visão Descritiva Integrada\n"
+     "Resumo curto do que mudou em alcance, tráfego e base entre os principais canais.\n"
+     "## 2. Leitura Preditiva\n"
+     "Direção mais provável para o próximo mês, com riscos principais em poucos bullets.\n"
+     "## 3. Recomendações-Chave\n"
+     "3–5 recomendações conectando diretamente os problemas e oportunidades identificados nos dois blocos anteriores.")
+  ],
 }
 
-def _fewshots_for(atype: str, focus: str) -> str:
-    focus = FOCUS_ALIAS.get(focus.strip().lower(), "panorama")
-    atype = {
-        "descritiva":"descriptive",
-        "descricao":"descriptive",
-        "preditiva":"predictive",
-        "prescritiva":"prescriptive",
-        "geral":"general"
-    }.get(atype.strip().lower(), atype)
-    key = (atype, focus)
+
+def _fewshots_for(atype: str, focus: str, summary_json: Dict[str, Any]) -> str:
+    focus_norm = FOCUS_ALIAS.get(focus.strip().lower(), "panorama")
+    alias_type = {
+        "descritiva": "descriptive",
+        "descricao": "descriptive",
+        "preditiva": "predictive",
+        "prescritiva": "prescriptive",
+        "geral": "general",
+    }
+    atype_norm = alias_type.get(atype.strip().lower(), atype)
+
+    key = (atype_norm, focus_norm)
     pairs = FEWSHOTS.get(key, [])
-    if not pairs: return ""
+    if not pairs:
+        return ""
+
+    # Gating simples: só traz few-shots descritivos “de pico” se houver anomalias no resumo
+    if atype_norm == "descriptive":
+        anomalies = (summary_json or {}).get("anomalies") or {}
+        has_anomaly = any(bool(v) for v in anomalies.values())
+        if not has_anomaly:
+            return ""
+
     out = []
     for role, text in pairs:
-        out.append(f"[EXEMPLO]\n{role}: {text}")
-    return "\n".join(out)
+        out.append(f"[EXEMPLO]\\n{role}: {text}")
+    return "\\n".join(out)
 
 # =======================================================
 # 7) Construtor Único do Prompt de Narrativa (LLM)
@@ -339,7 +404,7 @@ def _fewshots_for(atype: str, focus: str) -> str:
 def build_narrative_prompt(
     platforms: List[str],
     analysis_type: str,
-    analysis_focus: str,          # << novo parâmetro (enviesamento)
+    analysis_focus: str,
     analysis_query: str,
     context_text: str,
     summary_json: Dict[str, Any],
@@ -352,13 +417,13 @@ def build_narrative_prompt(
 ) -> str:
     # Mapas
     alias_type = {
-        "descritiva":"descriptive",
-        "descricao":"descriptive",
-        "preditiva":"predictive",
-        "prescritiva":"prescriptive",
-        "geral":"general",
-        "overall":"general",
-        "all":"general"
+        "descritiva": "descriptive",
+        "descricao": "descriptive",
+        "preditiva": "predictive",
+        "prescritiva": "prescriptive",
+        "geral": "general",
+        "overall": "general",
+        "all": "general",
     }
     atype = alias_type.get((analysis_type or "descriptive").lower(), analysis_type)
     focus = FOCUS_ALIAS.get((analysis_focus or "panorama").lower(), "panorama")
@@ -368,28 +433,97 @@ def build_narrative_prompt(
     vocabulary_block = build_vocabulary_block(summary_json)
     focus_block = FOCUS_OVERLAYS[focus]
     template = ANALYSIS_TEMPLATES.get(atype, ANALYSIS_TEMPLATES["descriptive"])
-    persona_block = f"[PERFIL] {voice_profile}: {VOICE_PROFILES.get(voice_profile,'')}"
+    persona_block = f"[PERFIL] {voice_profile}: {VOICE_PROFILES.get(voice_profile, '')}"
     narr_block = f"[ESTILO NARRATIVO] Use {narrative_style} (SCQA/Minto) para organizar a história."
 
-    # Granularidade -> limites
-    word_cap = {"descriptive": 400, "predictive": 500, "prescriptive": 600, "general": 600}[atype]
+    # Limite de palavras de acordo com tipo + formato
+    base_caps = {"descriptive": 400, "predictive": 500, "prescriptive": 600, "general": 600}
+    base_cap = base_caps.get(atype, 500)
+    fmt = (output_format or "detalhado").lower()
 
-    # Decision Brief só fora da descritiva
+    if fmt == "resumido":
+        word_cap = int(base_cap * 0.6)
+    elif fmt == "topicos":
+        word_cap = int(base_cap * 0.8)
+    else:  # detalhado / default
+        word_cap = int(base_cap * 1.2)
+
+    # Decision Brief: agora permitido para todos os tipos,
+    # mas com versão “sem ações” para descritiva
     decision_brief = ""
-    if decision_mode == "decision_brief" and atype != "descriptive":
-        decision_brief = """
+    if decision_mode == "decision_brief":
+        if atype == "descriptive":
+            decision_brief = """
             [DECISION BRIEF]
-            - TL;DR (1–3 bullets)
-            - O que está acontecendo (situação + dado/datas)
-            - Por que importa (impacto de negócio)
-            - O que fazer agora (3–5 ações priorizadas; dono e prazo)
+            - TL;DR (1–3 bullets).
+            - O que está acontecendo (situação + dados/datas-chave).
+            - Por que importa (impacto de negócio ou risco).
+            """
+        else:
+            decision_brief = """
+            [DECISION BRIEF]
+            - TL;DR (1–3 bullets).
+            - O que está acontecendo (situação + dado/datas).
+            - Por que importa (impacto de negócio).
+            - O que fazer agora (3–5 ações priorizadas; dono e prazo).
+            """
+
+    # Few-shots específicos (com gating simples pelos dados)
+    examples_block = _fewshots_for(atype, focus, summary_json)
+
+    bilingual_block = (
+        "Rascunhe mentalmente em inglês se quiser, mas **entregue apenas em PT-BR**; "
+        "não exponha raciocínio."
+    ) if bilingual else "Responda diretamente em PT-BR."
+
+    # Regras complementares, mais data-driven e específicas por tipo
+    regras = [
+        "- Conecte achados a impacto (receita, crescimento, eficiência).",
+        "- Não invente números; use somente o JSON e o contexto recuperado.",
+        f"- Limite de {word_cap} palavras (tolerância ±10%).",
+    ]
+
+    if atype == "descriptive":
+        regras.insert(
+            0,
+            "- Identifique no JSON os 3 principais movimentos (picos, quedas ou mudanças claras) e cite datas e ordens de grandeza em linguagem amigável."
+        )
+    if atype == "predictive":
+        regras.insert(
+            1,
+            "- Use a direção das tendências numéricas do JSON (altas/quedas/momentum) para calibrar percentuais e ordens de grandeza dos cenários; evite previsões genéricas soltas."
+        )
+    if atype == "prescriptive":
+        regras.insert(
+            1,
+            "- Baseie cada recomendação em problemas/oportunidades que apareçam nos dados ou na leitura descritiva/preditiva; evite boas práticas genéricas sem vínculo com o caso."
+        )
+
+    regras_block = "\\n".join(regras)
+
+    # Saída conforme formato (Resumido / Tópicos / Detalhado)
+    if fmt == "topicos":
+        saida_block = """
+        [SAÍDA]
+        - Responda em formato de tópicos curtos (bullet points), sem parágrafos longos.
+        - Cada tópico deve trazer um único insight completo (fato + por que isso importa).
+        - Evite blocos de texto corrido; privilegie listas.
         """
-
-    # Few-shots específicos
-    examples_block = _fewshots_for(atype, focus)
-
-    bilingual_block = ("Rascunhe mentalmente em inglês se quiser, mas **entregue apenas em PT-BR**; "
-                       "não exponha raciocínio.") if bilingual else "Responda diretamente em PT-BR."
+    elif fmt == "resumido":
+        saida_block = """
+        [SAÍDA]
+        - Foque em um sumário executivo enxuto (3–5 pontos principais).
+        - Linguagem clara e humana; títulos curtos.
+        - Evite jargão estatístico; conte uma história com poucos números, mas bem escolhidos.
+        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que o tipo seja Prescritiva).
+        """
+    else:  # detalhado
+        saida_block = """
+        [SAÍDA]
+        - Linguagem clara e humana; títulos curtos.
+        - Evite jargão estatístico; conte uma história com dados.
+        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que o tipo seja Prescritiva).
+        """
 
     # Prompt final
     return f"""
@@ -400,14 +534,13 @@ def build_narrative_prompt(
         {focus_block}
         {platform_hint}
         {vocabulary_block}
+        {narr_block}
 
         [TAREFA]
         {template}
 
         [REGRAS COMPLEMENTARES]
-        - Conecte achados a impacto (receita, crescimento, eficiência).
-        - Não invente números; use somente o JSON e o contexto recuperado.
-        - Limite de {word_cap} palavras (tolerância ±10%).
+        {regras_block}
 
         [CONTEXTO (RAG)]
         {context_text if context_text else "(sem contexto recuperado)"}
@@ -417,10 +550,7 @@ def build_narrative_prompt(
 
         {decision_brief}
 
-        [SAÍDA]
-        - Linguagem clara e humana; títulos curtos.
-        - Evite jargão estatístico; conte uma história com dados.
-        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que o tipo seja Prescritiva).
+        {saida_block}
 
         [PEDIDO DO USUÁRIO]
         {analysis_query}
@@ -429,3 +559,4 @@ def build_narrative_prompt(
 
         {examples_block}
     """.strip()
+

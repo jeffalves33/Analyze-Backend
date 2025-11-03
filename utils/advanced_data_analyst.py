@@ -367,11 +367,18 @@ class AdvancedDataAnalyst:
             narrative_style=str(payload.get("narrative_style", "SCQA")),
         )
 
-        if ap.analysis_type.strip().lower() == "descriptive":
-            # garante que não caia em modo “brief” (prescritivo)
-            if ap.decision_mode == "decision_brief":
-                ap.decision_mode = "topicos"
-            # estilo “SCQA” é ok (organização), mas “piramide” também funciona; opcional manter.
+        # Normaliza o decision_mode a partir do output_format escolhido na UI
+        fmt = (ap.output_format or "detalhado").strip().lower()
+
+        if fmt == "resumido":
+            # sempre usa Decision Brief em modo resumido (todos os tipos)
+            ap.decision_mode = "decision_brief"
+        elif fmt == "topicos":
+            # saída em bullets
+            ap.decision_mode = "topicos"
+        else:
+            # saída narrativa “completa”
+            ap.decision_mode = "narrativa"
 
 
         # Guardar o tipo de análise corrente para o _invoke usar
