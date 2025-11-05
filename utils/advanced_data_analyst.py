@@ -11,6 +11,7 @@ from utils.prompts.system_prompts import (
     get_platform_prompt,
     get_analysis_prompt,
     build_narrative_prompt,
+    build_chat_system_prompt
 )
 
 # ChatOpenAI (corrigido conforme aviso de depreciação)
@@ -261,6 +262,115 @@ class AdvancedDataAnalyst:
             "segments": {f"{c}_by_weekday": _weekday_breakdown(merged_df, c) for c in candidatos},
             "meta": {"platforms": platforms, "columns": all_cols, "selected_metrics": candidatos},
         }
+
+        # ---- Highlights: top 3 por métrica ----
+        highlights = {}
+        for c in candidatos:
+            dfc = merged_df[["data", c]].dropna()
+            if dfc.empty: 
+                continue
+            top3 = dfc.sort_values(c, ascending=False).head(3)
+            highlights[c] = [
+                {"date": str(r["data"].date()), "value": float(r[c])}
+                for _, r in top3.iterrows()
+            ]
+        summary["highlights"] = highlights
+
+        # ---- Comparação com período anterior (mesma duração) ----
+        try:
+            import pandas as pd
+            period = summary["period"]
+            if period["start"] and period["end"]:
+                start = pd.to_datetime(period["start"])
+                end   = pd.to_datetime(period["end"])
+                delta = (end - start) or pd.Timedelta(days=1)
+                prev_start, prev_end = start - delta, start
+                prev_mask = (merged_df["data"] >= prev_start) & (merged_df["data"] < prev_end)
+                cur_mask  = (merged_df["data"] >= start)      & (merged_df["data"] <= end)
+                comp = {}
+                for c in candidatos:
+                    cur  = merged_df.loc[cur_mask, c].mean()
+                    prev = merged_df.loc[prev_mask, c].mean()
+                    if pd.notna(cur) and pd.notna(prev) and prev != 0:
+                        comp[c] = {"cur": float(cur), "prev": float(prev), "delta_pct": float((cur/prev) - 1)}
+                summary["period_compare"] = comp
+        except Exception:
+            pass
+
+        # ---- Variância “baixa|media|alta” para gating de few-shots ----
+        try:
+            import numpy as np
+            variances = []
+            for c in candidatos:
+                s = merged_df[c].dropna()
+                if len(s) > 3:
+                    variances.append(float(np.var(s)))
+            vh = "baixa"
+            if variances:
+                q3 = np.quantile(variances, 0.75)
+                q1 = np.quantile(variances, 0.25)
+                vh = "alta" if q3 > 0 and (q3 - q1) > 0 else "media"
+            summary["meta"]["variance_hint"] = vh
+        except Exception:
+            summary["meta"]["variance_hint"] = "media"
+
+        return summary
+
+    def _enrich_summary(self, merged_df, platforms, summary):
+        """
+        Enriquecimento mínimo (Opção A):
+        - highlights: top 3 valores por métrica com a data
+        - meta.variance_hint: 'baixa' | 'media' | 'alta' (gating de few-shots)
+        Não mexe no _compute_summary. É chamado depois.
+        """
+        import numpy as np
+        import pandas as pd
+
+        if "data" in merged_df.columns:
+            merged_df = merged_df.copy()
+            merged_df["data"] = pd.to_datetime(merged_df["data"], errors="coerce")
+            merged_df = merged_df.dropna(subset=["data"]).sort_values("data")
+
+        # Escolhe métricas numéricas (todas colunas exceto 'data')
+        metric_cols = []
+        for c in merged_df.columns:
+            if c == "data":
+                continue
+            try:
+                if np.issubdtype(merged_df[c].dtype, np.number):
+                    metric_cols.append(c)
+            except Exception:
+                # Se dtype der erro/objeto, ignora
+                pass
+
+        # 1) Highlights: top 3 por métrica com data
+        highlights = {}
+        for c in metric_cols:
+            dfc = merged_df[["data", c]].dropna()
+            if dfc.empty:
+                continue
+            top3 = dfc.sort_values(c, ascending=False).head(3)
+            highlights[c] = [
+                {"date": d.strftime("%Y-%m-%d"), "value": float(v)}
+                for d, v in zip(top3["data"], top3[c])
+            ]
+        summary["highlights"] = highlights
+
+        # 2) Variance hint: para gating de few-shots (evitar "picos inventados")
+        try:
+            variances = []
+            for c in metric_cols:
+                s = merged_df[c].dropna().values
+                if s.size > 3:
+                    variances.append(float(np.var(s)))
+            vh = "media"
+            if variances:
+                q1, q3 = np.percentile(variances, [25, 75])
+                vh = "alta" if (q3 - q1) > 0 else "baixa"
+            summary.setdefault("meta", {})["variance_hint"] = vh
+        except Exception:
+            summary.setdefault("meta", {})["variance_hint"] = "media"
+
         return summary
 
     # --------- Narrative (LLM) ---------
@@ -272,7 +382,12 @@ class AdvancedDataAnalyst:
                         summary: Dict[str, Any],
                         output_format: str = "detalhado",
                         bilingual: bool = True) -> str:
-        prompt = build_narrative_prompt(
+        system_content = build_chat_system_prompt(
+            client_name=getattr(self, "client_name", "Cliente"),
+            voice_profile=getattr(self, "voice_profile", "CMO"),
+            analysis_focus=getattr(self, "analysis_focus", "panorama"),
+        )
+        user_content = build_narrative_prompt(
             platforms=platforms,
             analysis_type=analysis_type,
             analysis_focus=getattr(self, "analysis_focus", "panorama"),
@@ -280,7 +395,7 @@ class AdvancedDataAnalyst:
             context_text=context_text,
             summary_json=summary,
             output_format=output_format,
-            granularity=self.current_granularity if hasattr(self, "current_granularity") else "detalhada",
+            granularity=getattr(self, "current_granularity", "detalhada"),
             bilingual=bilingual,
             voice_profile=getattr(self, "voice_profile", "CMO"),
             decision_mode=getattr(self, "decision_mode", "decision_brief"),
@@ -294,7 +409,26 @@ class AdvancedDataAnalyst:
                 "(Nesta etapa, um LLM redigiria a narrativa com base no JSON e contexto acima.)"
             )
         llm = ChatOpenAI(model="gpt-4o", temperature=0.45, api_key=self.openai_api_key)
-        return llm.invoke(prompt).content  # type: ignore
+        msgs = [{"role":"system","content": system_content},
+                {"role":"user","content":   user_content}]
+        first = llm.invoke(msgs).content  # type: ignore
+        return self._refine_if_generic(llm, first, summary, user_content)
+
+    def _refine_if_generic(self, llm, text: str, summary: Dict[str, Any], user_content: str) -> str:
+        import re, json
+        # heurísticas simples: falta de números/data → pedir revisão
+        has_number = bool(re.search(r"\d{2}/\d{2}|\d{4}-\d{2}-\d{2}|\\b\\d{2,}[\\.,]?\\d*\\b", text))
+        has_date   = bool(re.search(r"\\b\\d{1,2}/\\d{1,2}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b", text))
+        if has_number and has_date:
+            return text
+        refine_prompt = (
+            "Revise o texto abaixo: ele está genérico. Reescreva citando **datas e números** do JSON seguinte.\n\n"
+            "[TEXTO]\n" + text + "\n\n"
+            "[DADOS]\n" + json.dumps(summary, ensure_ascii=False)
+        )
+        out = llm.invoke([{"role":"system","content":"Você é um editor sênior objetivo."},
+                        {"role":"user","content": refine_prompt}]).content
+        return out or text
 
     # --------- Public API ---------
     def get_client_agent(self,
@@ -313,9 +447,12 @@ class AdvancedDataAnalyst:
 
         # 2) Computar resumo determinístico
         summary = self._compute_summary(merged_df, platforms)
+        summary = self._enrich_summary(merged_df, platforms, summary)
 
         # 3) Cache por cliente + plataformas + período
-        cache_key = f"{client_id}_{'_'.join(platforms)}_{summary['period']['start']}_{summary['period']['end']}"
+        key_platforms = "_".join(sorted(platforms))
+        cache_key = f"{client_id}_{key_platforms}_{summary['period']['start']}_{summary['period']['end']}"
+
         self.clients_cache[cache_key] = {
             "df": merged_df,
             "summary": summary,

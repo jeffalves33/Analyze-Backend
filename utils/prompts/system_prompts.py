@@ -134,12 +134,14 @@ FOCUS_OVERLAYS = {
 # ==========================================================
 # 4) Templates por TIPO de análise (alinhados ao PDF)
 # ==========================================================
-# (Estruturas baseadas em “Sistema de Prompts – ho.ko AI.nalytics”)  # PDF
+# (Estruturas baseadas em “Sistema de Prompts – ho.ko AI.nalytics”)
 ANALYSIS_TEMPLATES = {
   "descriptive": """
         [ANÁLISE DESCRITIVA — NARRATIVA ESTRATÉGICA]
         Objetivo: transformar números do período em **história clara** do que aconteceu **e por quê isso importa**.
         Estrutura obrigatória:
+        ## 🔢 Top 3 Fatos com Data & Número
+        Liste 3–5 fatos objetivos extraídos do [DADOS], sempre com data e valor (ex.: “05/10: 12.340 visitas, +28% vs. média”).
         ## 🎯 O Que Aconteceu (2–3 linhas)
         Síntese executiva em linguagem de negócio (sem jargão estatístico).
         ## 📊 A História dos Dados
@@ -369,6 +371,43 @@ FEWSHOTS = {
   ],
 }
 
+FEWSHOTS.update({
+    # Novo: descritiva com foco panorama (geral)
+    ("descriptive","panorama"): [
+        ("Usuário","Quero uma leitura descritiva geral do período."),
+        ("Assistente",
+         "## O que Aconteceu\n"
+         "- 12/08: pico de impressões (92.140), +31% vs. média do mês.\n"
+         "- 21/08: queda de cliques (-18%) após pausa de mídia.\n"
+         "- Fins de semana concentraram 35% do alcance total.\n"
+         "## Por que Importa\n"
+         "A atenção ficou concentrada em janelas específicas; sem cadência, o patamar não sustentou.")
+    ],
+
+    # Novo: preditiva com foco negócio
+    ("predictive","negocio"): [
+        ("Usuário","Projete cenários focados em eficiência (CAC, ROAS) para o próximo mês."),
+        ("Assistente",
+         "## Cenários (prob.)\n"
+         "- Otimista (30%): manter ROAS > 3,0 com +10–15% conversões; gatilho: criativos com CTR>2,5%.\n"
+         "- Realista (55%): ROAS ~2,2–2,8; conversões estáveis; risco: saturação de frequência.\n"
+         "- Atenção (15%): ROAS <2,0 com queda de 10–15%; sinal: aumento de CPC e queda de CTR.")
+    ],
+
+    # Novo: prescritiva com foco negócio
+    ("prescriptive","negocio"): [
+        ("Usuário","Quero um plano de ação priorizado com foco financeiro."),
+        ("Assistente",
+         "## P1 — Quick Wins (2 semanas)\n"
+         "- Rebalancear orçamentos para conjuntos com CPA<mediana; dono: Performance; métrica: CPA.\n"
+         "## P2 — Testes\n"
+         "- 2 criativos focados em proposta de valor; dono: Conteúdo; métrica: CTR.\n"
+         "## Riscos & Mitigações\n"
+         "- Fadiga criativa: rotacionar semanalmente; revisão quinzenal de frequência.")
+    ],
+})
+
+
 
 def _fewshots_for(atype: str, focus: str, summary_json: Dict[str, Any]) -> str:
     focus_norm = FOCUS_ALIAS.get(focus.strip().lower(), "panorama")
@@ -392,6 +431,10 @@ def _fewshots_for(atype: str, focus: str, summary_json: Dict[str, Any]) -> str:
         has_anomaly = any(bool(v) for v in anomalies.values())
         if not has_anomaly:
             return ""
+        
+    var_hint = (summary_json or {}).get("meta", {}).get("variance_hint")
+    if atype_norm == "descriptive" and var_hint == "baixa":
+        return ""  # evita induzir narrativa de picos quando o período foi chato/estável
 
     out = []
     for role, text in pairs:
@@ -443,10 +486,13 @@ def build_narrative_prompt(
 
     if fmt == "resumido":
         word_cap = int(base_cap * 0.6)
+        if decision_mode in (None, "", "auto"): decision_mode = "decision_brief"
     elif fmt == "topicos":
         word_cap = int(base_cap * 0.8)
+        if decision_mode in (None, "", "auto"): decision_mode = "topicos"
     else:  # detalhado / default
         word_cap = int(base_cap * 1.2)
+        if decision_mode in (None, "", "auto"): decision_mode = "narrativa"
 
     # Decision Brief: agora permitido para todos os tipos,
     # mas com versão “sem ações” para descritiva
@@ -508,6 +554,7 @@ def build_narrative_prompt(
         - Responda em formato de tópicos curtos (bullet points), sem parágrafos longos.
         - Cada tópico deve trazer um único insight completo (fato + por que isso importa).
         - Evite blocos de texto corrido; privilegie listas.
+        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que Prescritiva) e **sempre que possível cite valores e datas do [DADOS].**
         """
     elif fmt == "resumido":
         saida_block = """
@@ -515,14 +562,14 @@ def build_narrative_prompt(
         - Foque em um sumário executivo enxuto (3–5 pontos principais).
         - Linguagem clara e humana; títulos curtos.
         - Evite jargão estatístico; conte uma história com poucos números, mas bem escolhidos.
-        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que o tipo seja Prescritiva).
+        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que Prescritiva) e **sempre que possível cite valores e datas do [DADOS].**
         """
     else:  # detalhado
         saida_block = """
         [SAÍDA]
         - Linguagem clara e humana; títulos curtos.
         - Evite jargão estatístico; conte uma história com dados.
-        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que o tipo seja Prescritiva).
+        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que Prescritiva) e **sempre que possível cite valores e datas do [DADOS].**
         """
 
     # Prompt final
