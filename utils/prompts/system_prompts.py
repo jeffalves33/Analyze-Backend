@@ -19,10 +19,10 @@ BASE_ANALYST_PROMPT = """
 STYLE_GUIDE = """
     [GUIA DE ESTILO]
     - Escreva em PT-BR claro, executivo e humano.
-    - Estruture com títulos curtos + parágrafos objetivos.
-    - Use datas exatas ao citar picos/vales.
-    - Evite jargão estatístico (média/mediana/p95 etc.). Trate números como história, não como planilha.
-    - Conecte achados a significado de negócio; não prolongue texto (respeite o limite de palavras).
+    - Use parágrafos bem conectados; use subtítulos simples apenas quando ajudarem a leitura.
+    - Use datas exatas ao citar picos, vales ou mudanças importantes ao longo do período.
+    - Evite jargão estatístico bruto (média/mediana/p95 etc.); traduza em linguagem de negócio.
+    - Seja direto, mas completo: cada parágrafo deve trazer dados e interpretação, sem encher linguiça.
 """
 
 # =========================================
@@ -104,7 +104,7 @@ FOCUS_OVERLAYS = {
         - Ressonância, percepção e presença de marca.
         - Qualidade das interações; momentos de conexão emocional.
         - Território de mensagem vs. ruído.
-    Linguagem: ressonância, conexão, território, narrativa, autoridade.
+        Linguagem: ressonância, conexão, território, narrativa, autoridade.
     """,
     "negocio": """
         [ENVIESAMENTO: Negócio]
@@ -126,80 +126,127 @@ FOCUS_OVERLAYS = {
         [ENVIESAMENTO: Panorama Integrado]
         Ênfases:
         - Equilíbrio entre marca, negócio e integração.
-        - Clareza executiva e priorização dos poucos pontos que movem a agulha.
-        Linguagem: panorama, síntese, direção, priorização.
+        - Visão de trajetória completa ao longo de todo o período, não apenas momentos isolados.
+        - Clareza executiva sem perder detalhes relevantes em cada fase do período.
+        Linguagem: panorama, evolução, síntese, direção, priorização.
     """
 }
 
 # ==========================================================
-# 4) Templates por TIPO de análise (alinhados ao PDF)
+# 4) Instruções por TIPO de análise (menos engessado)
 # ==========================================================
-# (Estruturas baseadas em “Sistema de Prompts – ho.ko AI.nalytics”)
-ANALYSIS_TEMPLATES = {
-  "descriptive": """
-        [ANÁLISE DESCRITIVA — NARRATIVA ESTRATÉGICA]
-        Objetivo: transformar números do período em **história clara** do que aconteceu **e por quê isso importa**.
-        Estrutura obrigatória:
-        ## 🔢 Top 3 Fatos com Data & Número
-        Liste 3–5 fatos objetivos extraídos do [DADOS], sempre com data e valor (ex.: “05/10: 12.340 visitas, +28% vs. média”).
-        ## 🎯 O Que Aconteceu (2–3 linhas)
-        Síntese executiva em linguagem de negócio (sem jargão estatístico).
-        ## 📊 A História dos Dados
-        ### Movimentos Estratégicos
-        - 2–3 padrões que contam a história (momentos decisivos, mudanças reais).
-        ### Contexto e Significado
-        - Hipóteses baseadas em dados (porquês plausíveis).
-        - O que isso significa para o negócio (impacto).
-        ## 💡 Insights Estratégicos (3–5, priorizados)
-        ## ⚠ Sinais de Atenção (1–2)
-        Regras de ouro:
-        - **Nunca** listar métrica crua (média/mediana/p95 etc.). Converta em linguagem de negócio.
-        - **Sempre** conectar achados a valor (receita, crescimento, eficiência).
-        - Use números **só** quando agregarem clareza (ex.: pico em 05/10).
-    """,
-    "predictive": """
-        [ANÁLISE PREDITIVA — CENÁRIOS]
-        Objetivo: projetar os próximos 30 dias com **cenários acionáveis**.
-        Estrutura:
-        ## 🎯 Cenário Mais Provável (2–3 linhas)
-        ## 📈 Tendências que Moldam o Futuro
-        - Momentum atual (forças em movimento).
-        - Fatores de influência (controláveis/externos).
-        ## 🔮 Três Cenários Possíveis (com probabilidades)
-        - Otimista (≈30%): o que acontece, gatilhos, indicador antecedente.
-        - Realista (≈50%): o que acontece, premissas, indicador antecedente.
-        - Atenção (≈20%): o que acontece, sinais de alerta, indicador antecedente.
-        ## ⚡ Janelas de Oportunidade (2–3)
-        ## 🎪 O Que Monitorar (3–4 sinais antecedentes)
-        Regras de ouro:
-        - Probabilidades e janelas temporais explícitas; sem “certezas”.
-        - Foque no que é controlável/observável.
-    """,
-    "prescriptive": """
-        [ANÁLISE PRESCRITIVA — PLANO PRIORIZADO]
-        Objetivo: converter evidências em **ações específicas** com dono e prazo.
-        Estrutura:
-        ## 🎯 Direcionamento Estratégico (2–3 linhas)
-        ## 🚀 Plano de Ação Priorizado (3 iniciativas máx.)
-        - PRIORIDADE N: Por que agora • Impacto esperado • Como fazer (3 bullets claros)
-        Responsável • Prazo • Investimento (baixo/médio/alto)
-        ## ⚡ Quick Wins (7–14 dias)
-        ## 💰 Otimização de Recursos (onde investir/reduzir/testar)
-        ## 📊 Metas & Indicadores (tabela curta)
-        ## ⚠ Riscos & Contramedidas (2)
-        ## 📅 Próxima Avaliação (data e o que medir)
-        Regras de ouro:
-        - Toda ação = o quê + por quê + como + quando + quem.
-    """,
-    "general": """
-        [ANÁLISE GERAL — INTEGRADA]
-        Objetivo: combinar em uma única visão executiva o que aconteceu, para onde tende e o que fazer.
-        Estrutura:
-        ## 1. Visão Descritiva Integrada (2–3 linhas)
-        ## 2. Leitura Preditiva (cenário mais provável + principais riscos)
-        ## 3. Recomendações-Chave (3–5 bullets ligados diretamente aos pontos 1 e 2)
-    """,
-}
+DESCRIPTIVE_ANALYSIS_PROMPT = ("""
+        [ANÁLISE DESCRITIVA — RELATO DETALHADO DO PERÍODO]
+        Objetivo: descrever com riqueza de detalhes o que aconteceu ao longo de TODO o período analisado, usando números concretos
+        e conectando-os ao contexto de negócio.
+
+        Como usar os dados:
+        - Apoie-se nas seções "kpis", "trends", "segments", "highlights", "evolution" e "period_compare" do JSON.
+        - Observe como as métricas começam o período, como se comportam no meio e em que patamar terminam.
+        - Quando o intervalo for longo (vários meses), organize mentalmente a narrativa por fases (início / meio / fim) ou por mês.
+
+        Estrutura sugerida (texto corrido, sem bullet points obrigatórios):
+        1) Abertura do período: um parágrafo contextualizando o intervalo de datas e o patamar médio de desempenho.
+        2) Evolução ao longo do tempo: 2–4 parágrafos descrevendo como as principais métricas se comportaram ao longo do período,
+           citando datas, valores e variações relevantes (não apenas dias de pico).
+        3) Comparação entre canais e métricas: 1–2 parágrafos explicando diferenças entre plataformas e indicadores principais.
+        4) Fechamento: um parágrafo sintetizando os aprendizados descritivos e o que eles revelam sobre o momento do negócio,
+           sem ainda trazer recomendações prescritivas.
+
+        Sempre que fizer sentido, traga valores absolutos e percentuais (por exemplo, "o alcance médio passou de X no início
+        para Y no final, um aumento de Z%").
+    """
+)
+
+PREDICTIVE_ANALYSIS_PROMPT = ("""
+        [ANÁLISE PREDITIVA — TENDÊNCIAS E CENÁRIOS]
+        Objetivo: projetar cenários futuros com base nas tendências observadas nos dados históricos, quantificando o que for possível.
+
+        Como usar os dados:
+        - Use "trends", "kpis", "highlights", "evolution" e "period_compare" do JSON.
+        - Observe a direção das séries (crescimento, queda, estabilidade) e a intensidade média das variações.
+        - Considere também sazonalidades aparentes em "segments" (semana, mês, fases).
+
+        Estrutura sugerida (texto corrido):
+        1) Recapitulando a tendência recente: 1–2 parágrafos resumindo o comportamento dos indicadores na parte final do período.
+        2) Cenário principal: 1–2 parágrafos descrevendo o cenário mais provável para os próximos períodos, com valores estimados
+           ou faixas e percentuais de crescimento/queda quando possível.
+        3) Cenários alternativos: ao menos um cenário mais otimista e um mais conservador, explicando em que condições cada um pode acontecer.
+        4) Riscos e fatores de sensibilidade: parágrafo discutindo incertezas, sazonalidade, mudanças de investimento, etc.
+
+        Sempre explique em que padrões históricos cada projeção se apoia e, quando aplicável, use faixas ("entre X e Y")
+        e linguagem de confiança ("tendência forte", "indicação moderada", etc.).
+    """
+)
+
+PRESCRIPTIVE_ANALYSIS_PROMPT = ("""
+        [ANÁLISE PRESCRITIVA — RECOMENDAÇÕES ACIONÁVEIS]
+        Objetivo: converter os insights dos dados em recomendações práticas e específicas, conectadas diretamente às evidências.
+
+        Como usar os dados:
+        - Parta dos problemas e oportunidades visíveis na análise descritiva/preditiva (implicitamente contidos no JSON).
+        - Use "kpis", "trends", "evolution" e "period_compare" como base para justificar cada recomendação.
+
+        Estrutura sugerida:
+        1) Direcionamento geral: um parágrafo explicando o foco das ações (ex.: capturar crescimento, estancar queda, estabilizar canal).
+        2) Recomendações principais: 3–6 recomendações, cada uma descrita em um mini-parágrafo contendo:
+           - o que fazer (ação concreta),
+           - onde/canal/métrica,
+           - qual problema ou oportunidade dos dados ela endereça,
+           - qual impacto esperado em termos de direção (aumentar, reduzir, estabilizar) e ordem de grandeza.
+        3) Prioridade e horizonte: amarre as recomendações em termos de prioridade (curto, médio, longo prazo).
+
+        Evite recomendações genéricas como "melhorar o conteúdo" sem vínculo direto com números e comportamentos observados.
+    """
+)
+
+GENERAL_ANALYSIS_PROMPT = ( """
+        [ANÁLISE GERAL — VISÃO INTEGRADA]
+        Objetivo: combinar em um único texto o que aconteceu no período, para onde os dados apontam e quais ações fazem sentido.
+
+        Estrutura sugerida (texto fluido):
+        1) Visão descritiva integrada: 1–2 parágrafos resumindo a trajetória do período (principais métricas e canais), com números.
+        2) Leitura preditiva: 1–2 parágrafos descrevendo a direção mais provável adiante, com menção a riscos principais.
+        3) Recomendações-chave: 2–4 parágrafos com recomendações diretamente vinculadas aos pontos descritivos e preditivos.
+
+        Mantenha um tom de consultoria executiva: conecte sempre dados → implicação → possível caminho de ação.
+    """
+)
+
+
+def apply_format_instructions(base_prompt: str, fmt: str) -> str:
+    fmt = (fmt or "").lower()
+    if fmt == "resumido":
+        return (
+            base_prompt
+            + " Para este pedido, produza um resumo executivo conciso, focado nos 3–5 pontos mais importantes, "
+              "em um ou dois parágrafos ou poucos tópicos claros."
+        )
+    elif fmt in ("topicos", "tópicos"):
+        return (
+            base_prompt
+            + " Para este pedido, organize a resposta principalmente em tópicos, mas com frases completas e explicativas. "
+              "Use bullet points quando ajudarem a destacar ideias, evitando listas telegráficas ou frases soltas."
+        )
+    else:  # detalhado
+        return (
+            base_prompt
+            + " Para este pedido, escreva em formato de relatório fluido, com parágrafos bem estruturados que conectem "
+              "descrição, interpretação (causas/correlações) e conclusão (implicações)."
+        )
+
+
+def get_system_prompt(analysis_type: str, fmt: str) -> str:
+    atype = (analysis_type or "descriptive").lower()
+    if atype in ("descriptive", "descritiva", "descricao"):
+        base = DESCRIPTIVE_ANALYSIS_PROMPT
+    elif atype in ("predictive", "preditiva"):
+        base = PREDICTIVE_ANALYSIS_PROMPT
+    elif atype in ("prescriptive", "prescritiva"):
+        base = PRESCRIPTIVE_ANALYSIS_PROMPT
+    else:
+        base = GENERAL_ANALYSIS_PROMPT
+    return apply_format_instructions(base, fmt)
 
 # ====================================================
 # 5) Plataforma (dicas interpretativas — opcionais)
@@ -250,163 +297,110 @@ def get_analysis_prompt(analysis_type: str, platforms: list[str], date_filter: s
 # ==========================================
 FEWSHOTS = {
   ("descriptive","branding"): [
-    ("Usuário","Quero uma descritiva de Instagram para outubro (branding)."),
+    ("Usuário",'Quero uma descritiva de Instagram para outubro (branding).'),
     ("Assistente",
-     "## 🎯 O Que Aconteceu\n"
-     "Outubro teve um **dia de ressonância** que mudou o padrão: o dia 5 concentrou atenção muito acima do normal.\n"
-     "## 📊 A História dos Dados\n"
-     "### Movimentos Estratégicos\n"
-     "- Um pico real de atenção (05/10) que virou referência de formato e mensagem.\n"
-     "- Sextas favorecem descoberta; domingos, consumo prolongado.\n"
-     "### Contexto e Significado\n"
-     "- O conteúdo certo no momento certo **parou o scroll**. Isso indica território de mensagem válido.\n"
-     "## 💡 Insights Estratégicos\n"
-     "1) Existe fórmula de alto impacto, ainda não sistematizada.\n"
-     "2) A presença é estável, mas falta expansão de base.\n"
-     "3) Janelas semanais claras (Sex/Dom) para orquestração.\n"
-     "## ⚠ Sinais de Atenção\n"
-     "- Gap entre visualizações e seguidores: atenção sem conversão.")
+     'Em outubro, o Instagram teve um dia claramente fora da curva: em 05/10, o alcance e as visualizações ficaram muito acima do patamar típico do mês. '
+     'Esse pico mostrou que existe um tipo de mensagem e de formato capaz de gerar ressonância de marca muito maior do que a média.\n\n'
+     'Nos demais dias, a presença se manteve estável com oscilações moderadas. Isso indica consistência mínima de comunicação, mas também que boa parte da lembrança de marca está ancorada em poucos momentos de alto impacto. '
+     'O desafio daqui em diante é transformar esse "dia de sorte" em uma fórmula replicável de conteúdo e narrativa, para que a marca não dependa de exceções para gerar percepção forte.')
   ],
-
   ("descriptive","negocio"): [
-    ("Usuário","Descritiva de Instagram com foco de negócio."),
+    ("Usuário",'Quero uma descritiva de Instagram com foco em impacto de negócio.'),
     ("Assistente",
-     "## 🎯 O Que Aconteceu\n"
-     "Atenção concentrada em poucos dias; nos demais, operação em regime de manutenção.\n"
-     "## 📊 A História dos Dados\n"
-     "### Movimentos Estratégicos\n"
-     "- Um dia entregou volume equivalente a vários dias somados.\n"
-     "- Audiência responde melhor em janelas específicas.\n"
-     "### Contexto e Significado\n"
-     "- Custo de oportunidade alto quando o blueprint não é replicado.\n"
-     "## 💡 Insights Estratégicos\n"
-     "1) Eficiência concentrada: focar recursos onde há prova de retorno.\n"
-     "2) Conversão de atenção em base não está acontecendo.\n"
-     "3) Consistência > volume aleatório.\n"
-     "## ⚠ Sinais de Atenção\n"
-     "- Estagnação de base eleva CAC futuro.")
+     'Ao longo do período, o desempenho de negócio no Instagram ficou concentrado em poucos dias: uma parcela pequena do calendário gerou a maior parte do alcance, dos cliques e das conversões assistidas. '
+     'Nos demais dias, o canal atuou mais como manutenção de presença do que como motor de crescimento.\n\n'
+     'Do ponto de vista de negócio, essa concentração aumenta o risco de dependência de campanhas pontuais e reduz o efeito composto. '
+     'Enquanto o patamar médio de desempenho permanece estável, existe espaço claro para capturar mais receita se a estratégia conseguir aproximar o "dia forte" da realidade cotidiana — replicando criativos, mensagens e janelas de publicação que geraram melhor resposta e eliminando esforços que consomem verba sem retorno proporcional.')
   ],
-
   ("descriptive","panorama"): [
-    ("Usuário","Quero uma descritiva geral das principais plataformas no período."),
+    ("Usuário",'Quero uma leitura descritiva geral das principais plataformas no período.'),
     ("Assistente",
-     "## 🎯 O Que Aconteceu\n"
-     "O período consolidou um padrão estável de presença, com alguns picos pontuais em canais diferentes.\n"
-     "## 📊 A História dos Dados\n"
-     "### Movimentos Estratégicos\n"
-     "- Instagram concentrou momentos de atenção em poucos dias de maior alcance.\n"
-     "- Google Analytics mostra tráfego direto e orgânico crescendo de forma gradual.\n"
-     "### Contexto e Significado\n"
-     "- A marca já conquistou um espaço consistente, mas ainda há espaço para acelerar conversão entre canais.\n"
-     "## 💡 Insights Estratégicos\n"
-     "1) A audiência responde bem quando há coerência entre pauta e canal.\n"
-     "2) Falta capturar melhor o tráfego que chega para convertê-lo em base proprietária.\n"
-     "3) A combinação entre social + busca tende a ser o motor de crescimento.\n"
-     "## ⚠ Sinais de Atenção\n"
-     "- Dependência de poucos formatos ou dias para concentrar boa parte do resultado.")
+     'No período analisado, os canais digitais atuaram de forma complementar, mas com pesos diferentes. Instagram concentrou os momentos de maior atenção de topo de funil, '
+     'enquanto o tráfego de busca e acesso direto sustentou o volume de visitas recorrentes ao site. LinkedIn e YouTube apareceram como reforço em janelas específicas, sem cadência contínua.\n\n'
+     'Em termos de marketing, isso mostra que a marca já possui uma base que volta com frequência, mas ainda captura pouco do potencial de descoberta e de aprofundamento do relacionamento. '
+     'A fotografia geral é de um ecossistema funcional, porém subalavancado: há atenção disponível que ainda não está totalmente sendo convertida em leads, oportunidades ou vendas, especialmente nos momentos em que os picos de audiência não encontram ofertas ou jornadas bem estruturadas.')
   ],
-
   ("predictive","panorama"): [
-    ("Usuário","Quero cenários para o próximo mês (geral)."),
+    ("Usuário",'Com base no histórico recente, projete o que tende a acontecer nos canais digitais como um todo.'),
     ("Assistente",
-     "## 🎯 Cenário Mais Provável\n"
-     "A tendência é manter o ritmo recente, com variação moderada em torno do patamar atual.\n"
-     "## 📈 Tendências\n"
-     "- Momentum positivo quando formatos e mensagens validados reaparecem.\n"
-     "- Risco de acomodação se não houver pequenos testes contínuos.\n"
-     "## 🔮 Três Cenários\n"
-     "- Otimista (30%): consolidação em um patamar acima do atual; gatilhos: repetição intencional dos conteúdos de maior resposta.\n"
-     "- Realista (50%): leve crescimento sustentado; premissas: manutenção da cadência e da qualidade média.\n"
-     "- Atenção (20%): regressão ao patamar anterior; sinais: queda de engajamento e estabilização do alcance.\n"
-     "## ⚡ Janelas\n"
-     "- Primeiras semanas do mês e períodos com campanhas sazonais.\n"
-     "## 🎪 Monitorar\n"
-     "- Evolução da base, relação entre alcance e conversão e resposta a novos testes de formato.")
+     'Se a estratégia atual for mantida, a tendência mais provável é de continuidade em torno do patamar recente: leves oscilações semanais de alcance e tráfego, '
+     'sem mudança estrutural no nível de atenção. Os picos devem seguir concentrados em campanhas pontuais, lançamentos e datas específicas, com períodos de calmaria entre eles.\n\n'
+     'Cenários mais agressivos de crescimento dependem de dois movimentos principais: aumentar a cadência de conteúdos que já provaram gerar pico de atenção e fortalecer o caminho entre descoberta e conversão '
+     '(por exemplo, combinando remarketing, nutrição da base e melhores pontos de captura). Sem esses ajustes, o cenário realista é de estabilidade com pequenas variações, em vez de crescimento acelerado e consistente.')
+  ],
+  ("predictive","negocio"): [
+    ("Usuário",'Projete cenários focados em eficiência de negócio (CAC, ROAS) para o próximo mês.'),
+    ("Assistente",
+     'Mantidos os níveis atuais de investimento e de desempenho criativo, o cenário mais provável para o próximo mês é de eficiência estável: o CAC tende a oscilar em torno da média recente, '
+     'com pequenas variações ligadas à sazonalidade e à competição de mídia. O ROAS deve acompanhar o padrão histórico, com leves ganhos em períodos em que a segmentação é mais precisa e o criativo está mais alinhado ao público.\n\n'
+     'Um cenário otimista de melhoria de eficiência viria da combinação de três fatores: redução de dispersão de orçamento em conjuntos de anúncios pouco performáticos, reforço dos criativos que já provaram retorno acima da média '
+     'e ajustes de jornada para reduzir atrito entre clique e conversão (páginas mais rápidas, ofertas mais claras, provas sociais mais visíveis). Sem esse tipo de otimização, existe risco de aumento gradual de CAC em períodos de maior concorrência nos leilões, pressionando margens.')
   ],
   ("prescriptive","conexao"): [
-    ("Usuário","Plano de ação integrado."),
+    ("Usuário",'Quero recomendações práticas para fortalecer a conexão entre canais e com a audiência.'),
     ("Assistente",
-     "## 🎯 Direcionamento\n"
-     "Transformar o padrão de pico em sistema e amarrar CTAs para converter atenção em base.\n"
-     "## 🚀 Plano Prioritário\n"
-     "- P1: Engenharia reversa do pico (owner Conteúdo, 7 dias, investimento baixo).\n"
-     "- P2: Calendário por geografia temporal (Sex/Dom) com CTAs; medir conv. view→follow.\n"
-     "- P3: Variações controladas (1 variável/semana) para evitar fadiga e aprender rápido.\n"
-     "## ⚡ Quick Wins\n"
-     "- Repetir conceito de alto impacto na próxima terça.\n"
-     "## 💰 Otimização\n"
-     "- Concentrar 80% do esforço nas janelas de maior retorno.\n"
-     "## 📊 Metas\n"
-     "- Picos semanais >25; +1,5% base/semana.\n"
-     "## ⚠ Riscos & Contramedidas\n"
-     "- Fadiga: evoluir 1 elemento por semana.")
+     'Primeiro, é importante transformar os dias de pico em pontos de partida para narrativas multiplataforma. Sempre que um conteúdo performar muito acima da média em um canal — por exemplo, um Reels no Instagram —, '
+     'ele deve ser rapidamente adaptado para outros formatos e canais: post estático de reforço, stories com bastidores, publicação no LinkedIn com leitura mais estratégica e, quando fizer sentido, versão em vídeo longo no YouTube.\n\n'
+     'Em paralelo, vale estruturar uma sequência clara de contato após esses momentos de alta atenção: capturar leads (newsletter, comunidade, lista de espera) e nutrir a audiência com comunicações de valor, '
+     'fazendo com que uma boa peça de conteúdo não seja um evento isolado, mas o gatilho de uma conversa contínua da marca com as pessoas. A ideia é que cada pico de atenção abra um novo ciclo de relacionamento, '
+     'e não apenas gere um gráfico bonito por um dia.')
   ],
   ("prescriptive","negocio"): [
-    ("Usuário","Quero um plano de ação focado em resultado de negócio."),
+    ("Usuário",'Quero recomendações prescritivas com foco em resultados de negócio.'),
     ("Assistente",
-     "## 🎯 Direcionamento\n"
-     "Transformar a atenção atual em receita previsível, priorizando canais e formatos que já provaram retorno.\n"
-     "## 🚀 Plano de Ação Priorizado (3 iniciativas)\n"
-     "- P1: Otimizar funil de conversão nas páginas de destino (owner Growth, 30 dias, investimento médio).\n"
-     "- P2: Concentrar mídia e esforço criativo nos dias/canais de maior eficiência observada; medir CPL e CPA.\n"
-     "- P3: Criar rotina de testes A/B quinzenais em criativos e ofertas para reduzir CAC.\n"
-     "## ⚡ Quick Wins\n"
-     "- Ajustar imediatamente CTAs dos conteúdos de melhor performance para capturar leads ou vendas.\n"
-     "## 💰 Otimização\n"
-     "- Reduzir investimento em canais de baixa resposta e realocar para os que geram melhor relação custo/resultado.\n"
-     "## 📊 Metas\n"
-     "- Aumentar a taxa de conversão e reduzir CAC no próximo ciclo.\n"
-     "## ⚠ Riscos & Contramedidas\n"
-     "- Superdependência de um único canal: manter pelo menos uma alternativa em teste constante.")
+     'No curto prazo, o maior ganho vem de organizar um plano de priorização: identificar os criativos, segmentos e canais que mais contribuíram para receita ou leads qualificados e realocar orçamento de maneira decisiva '
+     'a favor desses "centros de gravidade". Isso inclui cortar campanhas que sistematicamente entregam baixo ROAS ou CAC muito acima do alvo, mesmo que tenham volume de cliques.\n\n'
+     'Em seguida, é recomendável encurtar o caminho entre atenção e ação. Isso passa por revisar páginas de destino, clareza das ofertas e mecanismos de prova social, além de estruturar testes A/B contínuos em elementos críticos '
+     'como título, chamada para ação e ancoragem de preço. O objetivo é que cada pico de tráfego resulte em proporção maior de oportunidades concretas para o time comercial, reduzindo desperdício de mídia.')
   ],
   ("general","panorama"): [
-    ("Usuário","Quero uma análise geral integrada do período."),
+    ("Usuário",'Quero uma visão geral integrada: o que aconteceu, para onde tende e o que fazer.'),
     ("Assistente",
-     "## 1. Visão Descritiva Integrada\n"
-     "Resumo curto do que mudou em alcance, tráfego e base entre os principais canais.\n"
-     "## 2. Leitura Preditiva\n"
-     "Direção mais provável para o próximo mês, com riscos principais em poucos bullets.\n"
-     "## 3. Recomendações-Chave\n"
-     "3–5 recomendações conectando diretamente os problemas e oportunidades identificados nos dois blocos anteriores.")
+     'No período analisado, os canais digitais construíram um patamar estável de atenção, com alguns picos claros em campanhas específicas. '
+     'Instagram foi o principal motor de descoberta, enquanto busca e acesso direto sustentaram o volume recorrente de visitas. Outros canais entraram em momentos pontuais, reforçando mensagens-chave, mas sem manter cadência constante.\n\n'
+     'Se nada mudar na estratégia, o cenário mais provável é de manutenção desse patamar, com pequenas variações ligadas à sazonalidade e ao calendário promocional. '
+     'Para destravar crescimento, será necessário replicar de forma intencional os padrões dos dias fortes (criativos, mensagens, horários, segmentação) e conectar melhor esses momentos a caminhos claros de conversão e de construção de base proprietária.\n\n'
+     'Do ponto de vista prescritivo, três frentes parecem prioritárias: 1) sistematizar o aprendizado dos melhores conteúdos e campanhas, documentando o que funciona; '
+     '2) fortalecer os mecanismos de captura e nutrição de leads após picos de atenção; e 3) ajustar jornadas e ofertas para que o esforço de mídia se traduza mais diretamente em receita e oportunidades comerciais, reduzindo o gap entre atenção e resultado.')
   ],
 }
 
 FEWSHOTS.update({
-    # Novo: descritiva com foco panorama (geral)
     ("descriptive","panorama"): [
         ("Usuário","Quero uma leitura descritiva geral do período."),
         ("Assistente",
-         "## O que Aconteceu\n"
-         "- 12/08: pico de impressões (92.140), +31% vs. média do mês.\n"
-         "- 21/08: queda de cliques (-18%) após pausa de mídia.\n"
-         "- Fins de semana concentraram 35% do alcance total.\n"
-         "## Por que Importa\n"
-         "A atenção ficou concentrada em janelas específicas; sem cadência, o patamar não sustentou.")
+         "No período analisado, três movimentos se destacam. Em 12/08, houve um pico de impressões em torno de 92.140, cerca de 31% acima da média do mês, "
+         "marcando um momento de atenção concentrada. Em 21/08, observou-se uma queda de aproximadamente 18% nos cliques logo após uma pausa de mídia, "
+         "indicando dependência direta da compra de tráfego para sustentar o volume de interação. Além disso, os fins de semana concentraram cerca de 35% do "
+         "alcance total, mostrando que a audiência responde de forma mais intensa nesses dias.\n\n"
+         "Na prática, isso significa que a atenção não se distribui de maneira uniforme ao longo do calendário. Sem cadência consistente e sem um plano para "
+         "replicar os padrões dos dias fortes, o patamar de desempenho tende a oscilar e não se sustentar. As melhores oportunidades surgem quando a estratégia "
+         "consegue transformar esses momentos de pico em alavancas recorrentes, em vez de depender de eventos isolados.")
     ],
-
-    # Novo: preditiva com foco negócio
     ("predictive","negocio"): [
         ("Usuário","Projete cenários focados em eficiência (CAC, ROAS) para o próximo mês."),
         ("Assistente",
-         "## Cenários (prob.)\n"
-         "- Otimista (30%): manter ROAS > 3,0 com +10–15% conversões; gatilho: criativos com CTR>2,5%.\n"
-         "- Realista (55%): ROAS ~2,2–2,8; conversões estáveis; risco: saturação de frequência.\n"
-         "- Atenção (15%): ROAS <2,0 com queda de 10–15%; sinal: aumento de CPC e queda de CTR.")
+         "Olhando para o histórico recente, é possível desenhar três faixas de cenário para eficiência de mídia. Em um cenário otimista, com probabilidade próxima "
+         "de 30%, o ROAS tende a se manter acima de 3,0, com crescimento de aproximadamente 10 a 15% no volume de conversões. Esse quadro depende de criativos com "
+         "CTR consistentemente acima de 2,5% e de segmentações que preservem a qualidade do tráfego.\n\n"
+         "No cenário mais provável, em torno de 55% de chance, o ROAS deve oscilar na faixa de 2,2 a 2,8, com conversões estáveis e pequenas variações ligadas à "
+         "sazonalidade e à competição nos leilões. Já o cenário de atenção, estimado em cerca de 15%, envolve queda do ROAS para abaixo de 2,0, com redução de 10 "
+         "a 15% nas conversões. Esse quadro costuma vir acompanhado de aumento de CPC, queda de CTR e sinais de saturação de audiência. A forma como a equipe "
+         "monitora e reage a esses indicadores ao longo do mês será determinante para em qual desses caminhos o resultado efetivamente se encaixará.")
     ],
-
-    # Novo: prescritiva com foco negócio
     ("prescriptive","negocio"): [
         ("Usuário","Quero um plano de ação priorizado com foco financeiro."),
         ("Assistente",
-         "## P1 — Quick Wins (2 semanas)\n"
-         "- Rebalancear orçamentos para conjuntos com CPA<mediana; dono: Performance; métrica: CPA.\n"
-         "## P2 — Testes\n"
-         "- 2 criativos focados em proposta de valor; dono: Conteúdo; métrica: CTR.\n"
-         "## Riscos & Mitigações\n"
-         "- Fadiga criativa: rotacionar semanalmente; revisão quinzenal de frequência.")
+         "No curto prazo, o primeiro eixo de ação deve ser concentrar esforços em ganhos rápidos de eficiência. Isso passa por rebalancear o orçamento em favor dos "
+         "conjuntos de anúncios que já apresentam CPA abaixo da mediana, garantindo que mais verba seja direcionada para o que entrega melhor retorno. Nessa frente, "
+         "o time de Performance assume a liderança, acompanhando de perto a evolução do CPA e pausando gradualmente campanhas que consomem orçamento sem retorno "
+         "proporcional.\n\n"
+         "Em paralelo, vale abrir uma linha estruturada de testes criativos. Dois novos criativos focados em proposta de valor, conduzidos pelo time de Conteúdo, "
+         "podem servir como laboratório para aumentar CTR e reduzir custo por clique. Para mitigar riscos, especialmente fadiga criativa, é importante definir desde "
+         "o início uma rotina de rotação semanal e uma revisão quinzenal de frequência e resultados. Dessa forma, o plano equilibra proteção de eficiência atual "
+         "com espaço para encontrar novas peças capazes de destravar performance.")
     ],
 })
-
 
 
 def _fewshots_for(atype: str, focus: str, summary_json: Dict[str, Any]) -> str:
@@ -471,27 +465,36 @@ def build_narrative_prompt(
     atype = alias_type.get((analysis_type or "descriptive").lower(), analysis_type)
     focus = FOCUS_ALIAS.get((analysis_focus or "panorama").lower(), "panorama")
 
+    # Formato de saída
+    fmt = (output_format or "detalhado").lower()
+
     # Blocos-base
     platform_hint = get_platform_prompt(platforms)
     vocabulary_block = build_vocabulary_block(summary_json)
     focus_block = FOCUS_OVERLAYS[focus]
-    template = ANALYSIS_TEMPLATES.get(atype, ANALYSIS_TEMPLATES["descriptive"])
+    system_prompt_block = get_system_prompt(atype, fmt)
     persona_block = f"[PERFIL] {voice_profile}: {VOICE_PROFILES.get(voice_profile, '')}"
     narr_block = f"[ESTILO NARRATIVO] Use {narrative_style} (SCQA/Minto) para organizar a história."
 
     # Limite de palavras de acordo com tipo + formato
-    base_caps = {"descriptive": 400, "predictive": 500, "prescriptive": 600, "general": 600}
+    base_caps = {
+        "descriptive": 900,
+        "predictive": 900,
+        "prescriptive": 1000,
+        "general": 1100,
+    }
+
     base_cap = base_caps.get(atype, 500)
     fmt = (output_format or "detalhado").lower()
 
     if fmt == "resumido":
-        word_cap = int(base_cap * 0.6)
+        word_cap = int(base_cap * 0.45)
         if decision_mode in (None, "", "auto"): decision_mode = "decision_brief"
     elif fmt == "topicos":
-        word_cap = int(base_cap * 0.8)
+        word_cap = int(base_cap * 0.7)
         if decision_mode in (None, "", "auto"): decision_mode = "topicos"
     else:  # detalhado / default
-        word_cap = int(base_cap * 1.2)
+        word_cap = int(base_cap * 1.1)
         if decision_mode in (None, "", "auto"): decision_mode = "narrativa"
 
     # Decision Brief: agora permitido para todos os tipos,
@@ -515,7 +518,10 @@ def build_narrative_prompt(
             """
 
     # Few-shots específicos (com gating simples pelos dados)
-    examples_block = _fewshots_for(atype, focus, summary_json)
+    examples_block = ""
+    if fmt in ("resumido", "topicos"):
+        examples_block = _fewshots_for(atype, focus, summary_json)
+
 
     bilingual_block = (
         "Rascunhe mentalmente em inglês se quiser, mas **entregue apenas em PT-BR**; "
@@ -526,13 +532,20 @@ def build_narrative_prompt(
     regras = [
         "- Conecte achados a impacto (receita, crescimento, eficiência).",
         "- Não invente números; use somente o JSON e o contexto recuperado.",
-        f"- Limite de {word_cap} palavras (tolerância ±10%).",
     ]
+
+    # Se for detalhado, peça explicitamente para usar bem o espaço e cobrir o período todo
+    if fmt == "detalhado":
+        regras.append(
+            "- Em formato detalhado, cubra a trajetória do período (início, meio e fim), usando boa parte do limite de palavras para explicar a evolução dos dados."
+        )
+
+    regras.append(f"- Limite de {word_cap} palavras (tolerância ±10%).")
 
     if atype == "descriptive":
         regras.insert(
             0,
-            "- Identifique no JSON os 3 principais movimentos (picos, quedas ou mudanças claras) e cite datas e ordens de grandeza em linguagem amigável."
+            "- Reconstrua a trajetória do período, não apenas 2 ou 3 dias de pico: descreva fases (início, meio, fim ou meses) e períodos de estabilidade, altas e quedas relevantes."
         )
     if atype == "predictive":
         regras.insert(
@@ -545,31 +558,29 @@ def build_narrative_prompt(
             "- Baseie cada recomendação em problemas/oportunidades que apareçam nos dados ou na leitura descritiva/preditiva; evite boas práticas genéricas sem vínculo com o caso."
         )
 
-    regras_block = "\\n".join(regras)
+    regras_block = "\n".join(regras)
 
     # Saída conforme formato (Resumido / Tópicos / Detalhado)
     if fmt == "topicos":
         saida_block = """
-        [SAÍDA]
-        - Responda em formato de tópicos curtos (bullet points), sem parágrafos longos.
-        - Cada tópico deve trazer um único insight completo (fato + por que isso importa).
-        - Evite blocos de texto corrido; privilegie listas.
-        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que Prescritiva) e **sempre que possível cite valores e datas do [DADOS].**
+            [SAÍDA]
+            - Organize a resposta principalmente em tópicos, mas com frases completas e explicativas.
+            - Agrupe os tópicos em blocos lógicos (ex.: contexto, movimentos, implicações), em vez de listar qualquer coisa que aparecer.
+            - Use números e datas somente quando ajudarem a reforçar o insight.
         """
     elif fmt == "resumido":
         saida_block = """
-        [SAÍDA]
-        - Foque em um sumário executivo enxuto (3–5 pontos principais).
-        - Linguagem clara e humana; títulos curtos.
-        - Evite jargão estatístico; conte uma história com poucos números, mas bem escolhidos.
-        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que Prescritiva) e **sempre que possível cite valores e datas do [DADOS].**
+            [SAÍDA]
+            - Entregue um resumo executivo com 3–5 ideias principais.
+            - Pode usar parágrafos curtos ou tópicos, desde que cada ponto traga: fato + contexto + por que importa.
+            - Evite entrar em muitos detalhes operacionais; foque no que muda a percepção de negócio.
         """
     else:  # detalhado
         saida_block = """
-        [SAÍDA]
-        - Linguagem clara e humana; títulos curtos.
-        - Evite jargão estatístico; conte uma história com dados.
-        - Feche cada bloco com o **por que isso importa** (sem virar prescrição, a menos que Prescritiva) e **sempre que possível cite valores e datas do [DADOS].**
+            [SAÍDA]
+            - Escreva em formato de relatório fluido, com parágrafos conectando o que aconteceu, possíveis causas e implicações.
+            - Use tópicos apenas quando realmente ajudar a organizar ações ou listas curtas.
+            - Sempre que possível, cite valores e datas do [DADOS] ao comentar um movimento relevante.
         """
 
     # Prompt final
@@ -584,7 +595,7 @@ def build_narrative_prompt(
         {narr_block}
 
         [TAREFA]
-        {template}
+        {system_prompt_block}
 
         [REGRAS COMPLEMENTARES]
         {regras_block}

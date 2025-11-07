@@ -382,6 +382,11 @@ class AdvancedDataAnalyst:
                         summary: Dict[str, Any],
                         output_format: str = "detalhado",
                         bilingual: bool = True) -> str:
+        """
+        Monta as mensagens para o LLM com:
+        - system: identidade + voz + foco (build_chat_system_prompt)
+        - user: instruções completas + [DADOS] + [CONTEXTO] (build_narrative_prompt)
+        """
         system_content = build_chat_system_prompt(
             client_name=getattr(self, "client_name", "Cliente"),
             voice_profile=getattr(self, "voice_profile", "CMO"),
@@ -408,29 +413,125 @@ class AdvancedDataAnalyst:
                 "Solicitação:\n" + analysis_query + "\n\n"
                 "(Nesta etapa, um LLM redigiria a narrativa com base no JSON e contexto acima.)"
             )
-        llm = ChatOpenAI(model="gpt-4o", temperature=0.45, api_key=self.openai_api_key)
-        msgs = [{"role":"system","content": system_content},
-                {"role":"user","content":   user_content}]
+
+        # Config mais adequada para narrativa: criatividade moderada, pouca repetição
+        llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.65,
+            presence_penalty=0.1,
+            frequency_penalty=0.1,
+            api_key=self.openai_api_key,
+        )
+
+        msgs = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
         first = llm.invoke(msgs).content  # type: ignore
-        return self._refine_if_generic(llm, first, summary, user_content)
+
+        refined = self._refine_if_generic(llm, first, summary, user_content)
+        return self._postprocess_output(refined, output_format)
 
     def _refine_if_generic(self, llm, text: str, summary: Dict[str, Any], user_content: str) -> str:
         import re, json
-        # heurísticas simples: falta de números/data → pedir revisão
-        has_number = bool(re.search(r"\d{2}/\d{2}|\d{4}-\d{2}-\d{2}|\\b\\d{2,}[\\.,]?\\d*\\b", text))
-        has_date   = bool(re.search(r"\\b\\d{1,2}/\\d{1,2}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b", text))
+        # heurísticas simples:
+        # - se não tiver NENHUM número ou data, pedir revisão focando em datas/números do JSON
+        has_number = bool(re.search(r"\d{2}/\d{2}|\d{4}-\d{2}-\d{2}|\b\d{2,}[.,]?\d*\b", text))
+        has_date   = bool(re.search(r"\b\d{1,2}/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b", text))
         if has_number and has_date:
             return text
+
         refine_prompt = (
-            "Revise o texto abaixo: ele está genérico. Reescreva citando **datas e números** do JSON seguinte.\n\n"
+            "Revise o texto abaixo: ele está genérico. Reescreva citando datas e números concretos do JSON a seguir, "
+            "sempre que isso ajudar a explicar o movimento dos dados.\n\n"
             "[TEXTO]\n" + text + "\n\n"
             "[DADOS]\n" + json.dumps(summary, ensure_ascii=False)
         )
-        out = llm.invoke([{"role":"system","content":"Você é um editor sênior objetivo."},
-                        {"role":"user","content": refine_prompt}]).content
+        out = llm.invoke(
+            [
+                {"role": "system", "content": "Você é um editor sênior objetivo e técnico."},
+                {"role": "user", "content": refine_prompt},
+            ]
+        ).content
         return out or text
 
+    def _postprocess_output(self, text: str, output_format: str) -> str:
+        """
+        Ajustes finais para aderir ao formato pedido:
+        - "topicos": garante lista em bullets se o modelo não fizer.
+        - "resumido": corta para poucas frases se vier longo demais.
+        """
+        import re
+
+        fmt = (output_format or "detalhado").strip().lower()
+        cleaned = text.strip()
+
+        if fmt == "topicos":
+            # Se já houver bullets, mantém como está
+            lines = cleaned.splitlines()
+            has_bullets = any(l.lstrip().startswith(("-", "*", "•")) for l in lines)
+            if has_bullets:
+                return cleaned
+
+            # Caso contrário, transforma frases em bullets
+            sentences = re.split(r'(?<=[.!?])\s+', cleaned)
+            bullets = [f"- {s.strip()}" for s in sentences if s.strip()]
+            # Evita criar lista gigantesca
+            if len(bullets) > 10:
+                bullets = bullets[:10]
+            return "\n".join(bullets)
+
+        if fmt == "resumido":
+            # Mantém só as primeiras 4–5 frases para forçar concisão
+            sentences = re.split(r'(?<=[.!?])\s+', cleaned)
+            if len(sentences) > 5:
+                cleaned = " ".join(sentences[:5]).strip()
+            return cleaned
+
+        # detalhado / default → sem ajuste estrutural
+        return cleaned
+
     # --------- Public API ---------
+    def _build_rag_query(self,
+                        analysis_query: str,
+                        platforms: List[str],
+                        summary: Dict[str, Any],
+                        analysis_type: str,
+                        analysis_focus: str) -> str:
+        """
+        Monta uma query mais rica para o RAG, combinando:
+        - pergunta original do usuário
+        - tipo de análise + foco (branding/negócio/conexão/panorama)
+        - principais métricas e métricas com anomalias
+        """
+        parts: List[str] = []
+
+        if analysis_query:
+            parts.append(analysis_query.strip())
+
+        atype = (analysis_type or "descriptive").strip().lower()
+        parts.append(f"tipo={atype}")
+        parts.append(f"foco={analysis_focus or 'panorama'}")
+
+        # Meta: métricas selecionadas (já vem do summary)
+        if isinstance(summary, dict):
+            meta = summary.get("meta", {}) or {}
+            selected = meta.get("selected_metrics") or []
+            if selected:
+                parts.append("metricas-chave: " + ", ".join(selected[:6]))
+
+            # Métricas com anomalias (picos/vales)
+            anomalies = summary.get("anomalies", {}) or {}
+            hot_metrics = [m for m, vals in anomalies.items() if vals]
+            if hot_metrics:
+                parts.append("metricas-com-picos: " + ", ".join(hot_metrics[:6]))
+
+        # Plataformas envolvidas
+        if platforms:
+            parts.append("plataformas: " + ", ".join(platforms))
+
+        return " | ".join(parts)
+
     def get_client_agent(self,
                          agency_id: str,
                          client_id: str,
@@ -461,19 +562,32 @@ class AdvancedDataAnalyst:
 
         # 4) Retornar função de invocação que busca contexto + narra
         def _invoke(analysis_query: str, output_format: str = "detalhado", bilingual: bool = True) -> Dict[str, Any]:
-            # 4.1) Buscar contexto histórico no Pinecone e incluir prompt de plataforma
+            # Tipo/foco corrente vindos do run_analysis
+            atype = self.current_analysis_type if hasattr(self, "current_analysis_type") else "descriptive"
+            focus = getattr(self, "analysis_focus", "panorama")
+
+            # 4.1) Montar query enriquecida para o RAG
+            rag_query = self._build_rag_query(
+                analysis_query=analysis_query or "panorama do período",
+                platforms=platforms,
+                summary=summary,
+                analysis_type=atype,
+                analysis_focus=focus,
+            )
+
+            # 4.2) Buscar contexto histórico no Pinecone
             context_text = self.vector_db.retrieve_context_for_analysis(
-                query=analysis_query or "panorama do período",
+                query=rag_query,
                 scope="client",
                 agency_id=agency_id,
                 client_id=client_id,
-                k_total=8
+                k_total=8,
             )
 
-            # 4.2) Gerar narrativa (LLM apenas redige)
+            # 4.3) Gerar narrativa (LLM apenas redige)
             analysis_text = self._make_narrative(
                 platforms=platforms,
-                analysis_type=self.current_analysis_type if hasattr(self, "current_analysis_type") else "descriptive",
+                analysis_type=atype,
                 analysis_query=analysis_query,
                 context_text=context_text,
                 summary=summary,
