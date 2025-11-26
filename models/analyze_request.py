@@ -6,8 +6,8 @@ from typing import Optional, List
 class AnalyzeRequest(BaseModel):
     agency_id: str
     client_id: str
-    platforms: List[str]
-    analysis_type: str
+    platforms: Optional[List[str]] = None
+    analysis_type: Optional[str] = None
     analysis_focus: str
     start_date: Optional[str] = None
     end_date: Optional[str] = None

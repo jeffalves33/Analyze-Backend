@@ -600,22 +600,24 @@ class AdvancedDataAnalyst:
 
     def run_analysis(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         start_time = datetime.now()
+        raw_platforms = payload.get("platforms") or []
+        platforms_list = [str(p) for p in raw_platforms]
 
         ap = AnalysisPayload(
-            agency_id=str(payload.get("agency_id")),
-            client_id=str(payload.get("client_id")),
-            platforms=[str(p) for p in payload.get("platforms", [])],
-            analysis_focus=str(payload.get("analysis_focus", "panorama")),
-            analysis_type=str(payload.get("analysis_type", "descriptive")),
-            start_date=payload.get("start_date"),
-            end_date=payload.get("end_date"),
-            output_format=str(payload.get("output_format", "detalhado")),
-            analysis_query=payload.get("analysis_query"),
+            agency_id=str(payload.get("agency_id") or ""),
+            client_id=str(payload.get("client_id") or ""),
+            platforms=platforms_list,
+            analysis_focus=str(payload.get("analysis_focus") or "panorama"),
+            analysis_type=str(payload.get("analysis_type") or "descriptive"),
+            start_date=payload.get("start_date") or None,
+            end_date=payload.get("end_date") or None,
+            output_format=str(payload.get("output_format") or "detalhado"),
+            analysis_query=payload.get("analysis_query") or None,
             bilingual=bool(payload.get("bilingual", True)),
-            granularity=str(payload.get("granularity", payload.get("output_granularity", "detalhada"))),
-            voice_profile=str(payload.get("voice_profile", "CMO")),
-            decision_mode=str(payload.get("decision_mode", "decision_brief")),
-            narrative_style=str(payload.get("narrative_style", "SCQA")),
+            granularity=str(payload.get("granularity") or payload.get("output_granularity") or "detalhada"),
+            voice_profile=str(payload.get("voice_profile") or "CMO"),
+            decision_mode=str(payload.get("decision_mode") or "decision_brief"),
+            narrative_style=str(payload.get("narrative_style") or "SCQA"),
         )
 
         # Normaliza o decision_mode a partir do output_format escolhido na UI
@@ -681,4 +683,5 @@ class AdvancedDataAnalyst:
             "status": status,
             "error": error,
         }
+        print(response_json_return)
         return response_json_return

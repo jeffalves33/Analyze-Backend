@@ -14,4 +14,4 @@ async def analyze(request: AnalyzeRequest):
         result_text = (service_resp or {}).get("result") or ""
         return JSONResponse(content={"result": result_text}, status_code=200)
     except Exception as e:
-        raise JSONResponse(content={"message": str(e)}, status_code=500)
+        return JSONResponse(content={"message": str(e)}, status_code=500)
