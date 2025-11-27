@@ -603,6 +603,13 @@ class AdvancedDataAnalyst:
         raw_platforms = payload.get("platforms") or []
         platforms_list = [str(p) for p in raw_platforms]
 
+        # >>> regra: se não vier tipo de análise e foco for NEGÓCIO,
+        # >>> usar "general" (análise integrada: descritiva + preditiva + prescritiva)
+        analysis_focus_raw = str(payload.get("analysis_focus") or "panorama")
+        analysis_type_raw = payload.get("analysis_type")
+        if not analysis_type_raw and analysis_focus_raw == "negocio":
+            analysis_type_raw = "general"
+
         ap = AnalysisPayload(
             agency_id=str(payload.get("agency_id") or ""),
             client_id=str(payload.get("client_id") or ""),
@@ -624,13 +631,10 @@ class AdvancedDataAnalyst:
         fmt = (ap.output_format or "detalhado").strip().lower()
 
         if fmt == "resumido":
-            # sempre usa Decision Brief em modo resumido (todos os tipos)
             ap.decision_mode = "decision_brief"
         elif fmt == "topicos":
-            # saída em bullets
             ap.decision_mode = "topicos"
         else:
-            # saída narrativa “completa”
             ap.decision_mode = "narrativa"
 
 
@@ -652,14 +656,23 @@ class AdvancedDataAnalyst:
 
         # Se não vier pergunta específica, monta uma a partir dos templates
         if not ap.analysis_query:
-            date_filter = ""
-            if ap.start_date and ap.end_date:
-                date_filter = f" no período de {ap.start_date} a {ap.end_date}"
-            elif ap.start_date:
-                date_filter = f" a partir de {ap.start_date}"
-            elif ap.end_date:
-                date_filter = f" até {ap.end_date}"
-            ap.analysis_query = get_analysis_prompt(ap.analysis_type, ap.platforms, date_filter)
+            if ap.analysis_focus == "negocio":
+                ap.analysis_query = (
+                    "Quero uma análise de negócio completa para este cliente, "
+                    "combinando visão descritiva, preditiva e prescritiva em um único texto. "
+                    "Foque em receita, margens, eficiência, riscos e oportunidades do negócio, dentre outros o que achar significativo falar e sem economizar texto, raciocínio ou análise, "
+                    "usando o máximo possível de números e valores disponíveis nos dados, "
+                    "sem se prender a plataformas específicas."
+                )
+            else:
+                date_filter = ""
+                if ap.start_date and ap.end_date:
+                    date_filter = f" no período de {ap.start_date} a {ap.end_date}"
+                elif ap.start_date:
+                    date_filter = f" a partir de {ap.start_date}"
+                elif ap.end_date:
+                    date_filter = f" até {ap.end_date}"
+                ap.analysis_query = get_analysis_prompt(ap.analysis_type, ap.platforms, date_filter)
         try:
             result = invoke_func(ap.analysis_query, ap.output_format, ap.bilingual)
             status = "success"
@@ -683,5 +696,4 @@ class AdvancedDataAnalyst:
             "status": status,
             "error": error,
         }
-        print(response_json_return)
         return response_json_return
