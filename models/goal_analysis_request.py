@@ -1,4 +1,3 @@
-# models/goal_analysis_request.py
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
@@ -15,5 +14,10 @@ class GoalAnalysisRequest(BaseModel):
 
     kpis: List[Dict[str, Any]] = Field(default_factory=list)
 
-    # opcional: você pode mandar um resumo de métricas reais do período no futuro
     metrics_summary: Optional[Dict[str, Any]] = None
+
+    platforms: Optional[List[str]] = None
+    analysis_type: str = "general"
+    analysis_focus: str = "panorama"
+    output_format: str = "detalhado"
+    analysis_query: Optional[str] = None
