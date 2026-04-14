@@ -353,24 +353,26 @@ class VectorDBManager:
         namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
         index = self.pc.Index(self.main_index_name)
 
-        metadata_filter: Dict[str, Any] = {"agency_id": {"$eq": agency_id}}
-        if client_id:
-            metadata_filter["client_id"] = {"$eq": client_id}
-        if doc_type:
-            metadata_filter["doc_type"] = {"$eq": doc_type}
+        # O namespace já isola completamente os documentos do cliente/agência.
+        # Filtro de metadata só é aplicado quando doc_type for especificado
+        # para não excluir vetores gravados com tipos ligeiramente diferentes de agency_id/client_id.
+        metadata_filter: Optional[Dict[str, Any]] = {"doc_type": {"$eq": doc_type}} if doc_type else None
 
         # Vetor unitário na primeira dimensão — apenas para satisfazer a API
         dummy_vector = [0.0] * 1536
         dummy_vector[0] = 1.0
 
-        results = index.query(
+        query_kwargs: Dict[str, Any] = dict(
             vector=dummy_vector,
             top_k=min(limit, 10_000),
             namespace=namespace,
-            filter=metadata_filter,
             include_metadata=True,
             include_values=False,
         )
+        if metadata_filter:
+            query_kwargs["filter"] = metadata_filter
+
+        results = index.query(**query_kwargs)
 
         documents = []
         for match in results.matches:
