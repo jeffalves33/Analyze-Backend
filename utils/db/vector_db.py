@@ -330,3 +330,143 @@ class VectorDBManager:
             confidentiality="media",
             context=context
         )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # GESTÃO DE DOCUMENTOS: listagem, detalhes e exclusão
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def list_documents(
+        self,
+        agency_id: str,
+        client_id: Optional[str] = None,
+        scope: Literal["global", "agency", "client"] = "client",
+        doc_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        Lista documentos armazenados no namespace do cliente/agência.
+
+        Estratégia: query com vetor unitário neutro + filtro de metadata.
+        O score retornado não tem significado semântico aqui — serve apenas
+        para recuperar os registros com seus metadados.
+        """
+        namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+        index = self.pc.Index(self.main_index_name)
+
+        metadata_filter: Dict[str, Any] = {"agency_id": {"$eq": agency_id}}
+        if client_id:
+            metadata_filter["client_id"] = {"$eq": client_id}
+        if doc_type:
+            metadata_filter["doc_type"] = {"$eq": doc_type}
+
+        # Vetor unitário na primeira dimensão — apenas para satisfazer a API
+        dummy_vector = [0.0] * 1536
+        dummy_vector[0] = 1.0
+
+        results = index.query(
+            vector=dummy_vector,
+            top_k=min(limit, 10_000),
+            namespace=namespace,
+            filter=metadata_filter,
+            include_metadata=True,
+            include_values=False,
+        )
+
+        documents = []
+        for match in results.matches:
+            md = match.metadata or {}
+            documents.append({
+                "id": match.id,
+                "doc_type": md.get("doc_type"),
+                "source": md.get("source"),
+                "author": md.get("author"),
+                "agency_id": md.get("agency_id"),
+                "client_id": md.get("client_id"),
+                "scope": md.get("scope"),
+                "tags": md.get("tags", []),
+                "main_category": md.get("main_category"),
+                "subcategory": md.get("subcategory"),
+                "confidentiality": md.get("confidentiality"),
+                "created_at": md.get("created_at"),
+                "ctx_customer_name": md.get("ctx_customer_name"),
+            })
+
+        return documents
+
+    def get_document_details(
+        self,
+        vector_id: str,
+        agency_id: str,
+        client_id: Optional[str] = None,
+        scope: Literal["global", "agency", "client"] = "client",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Retorna metadados completos e texto de um documento pelo seu ID.
+        O campo 'text' corresponde à chave text_key usada no PineconeVectorStore.
+        """
+        namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+        index = self.pc.Index(self.main_index_name)
+
+        result = index.fetch(ids=[vector_id], namespace=namespace)
+
+        if vector_id not in result.vectors:
+            return None
+
+        vector = result.vectors[vector_id]
+        md = vector.metadata or {}
+
+        return {
+            "id": vector_id,
+            "text": md.get("text", ""),
+            "doc_type": md.get("doc_type"),
+            "source": md.get("source"),
+            "author": md.get("author"),
+            "agency_id": md.get("agency_id"),
+            "client_id": md.get("client_id"),
+            "scope": md.get("scope"),
+            "tags": md.get("tags", []),
+            "main_category": md.get("main_category"),
+            "subcategory": md.get("subcategory"),
+            "confidentiality": md.get("confidentiality"),
+            "created_at": md.get("created_at"),
+            "ctx_customer_name": md.get("ctx_customer_name"),
+            "metadata_raw": md,
+        }
+
+    def delete_document(
+        self,
+        vector_id: str,
+        agency_id: str,
+        client_id: Optional[str] = None,
+        scope: Literal["global", "agency", "client"] = "client",
+    ) -> bool:
+        """
+        Exclui um documento do Pinecone pelo seu ID vetorial.
+        Retorna True se a operação foi enviada com sucesso.
+        """
+        namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+        index = self.pc.Index(self.main_index_name)
+        index.delete(ids=[vector_id], namespace=namespace)
+        return True
+
+    def delete_documents_batch(
+        self,
+        vector_ids: List[str],
+        agency_id: str,
+        client_id: Optional[str] = None,
+        scope: Literal["global", "agency", "client"] = "client",
+    ) -> Dict[str, Any]:
+        """
+        Exclui múltiplos documentos em lote.
+        Retorna um dict com 'deleted_count' e 'ids'.
+        """
+        namespace = self._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+        index = self.pc.Index(self.main_index_name)
+
+        # Pinecone aceita até 1000 IDs por chamada de delete
+        BATCH_SIZE = 1000
+        for i in range(0, len(vector_ids), BATCH_SIZE):
+            batch = vector_ids[i: i + BATCH_SIZE]
+            index.delete(ids=batch, namespace=namespace)
+
+        return {"deleted_count": len(vector_ids), "ids": vector_ids}
