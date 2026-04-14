@@ -1,5 +1,7 @@
 # ===== Arquivo: routers/document_router.py =====
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
 from models.document_request import (
     DocumentRequest,
     DocumentListRequest,
@@ -13,6 +15,13 @@ from models.document_request import (
 from services.document_service import DocumentService
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
+
+
+class DebugRequest(BaseModel):
+    agency_id: str
+    client_id: Optional[str] = None
+    scope: str = "client"
+    top_k: int = 100
 
 
 @router.post("/store")
@@ -103,5 +112,24 @@ async def delete_documents_batch(request: DocumentDeleteBatchRequest):
         return result
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/debug")
+async def debug_list(request: DebugRequest):
+    """
+    Endpoint de diagnóstico — NÃO usar em produção permanentemente.
+    Retorna informações brutas do Pinecone sem filtros de metadata,
+    permitindo identificar problemas de namespace, metadata e query.
+    """
+    try:
+        result = DocumentService.debug_list(
+            agency_id=request.agency_id,
+            client_id=request.client_id,
+            scope=request.scope,
+            top_k=request.top_k,
+        )
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

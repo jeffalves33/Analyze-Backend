@@ -7,7 +7,7 @@ from models.document_request import (
     DocumentDeleteRequest,
     DocumentDeleteBatchRequest,
 )
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class DocumentService:
@@ -145,3 +145,76 @@ class DocumentService:
                 "deleted_count": 0,
                 "message": f"Erro ao excluir documentos em lote: {str(e)}",
             }
+
+    # ─── Debug ────────────────────────────────────────────────────────────────
+
+    @classmethod
+    def debug_list(
+        cls,
+        agency_id: str,
+        client_id: Optional[str],
+        scope: str,
+        top_k: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Diagnóstico: retorna dados brutos do Pinecone sem filtros de metadata.
+        Mostra namespace usado, total de vetores encontrados e metadata de cada um.
+        """
+        try:
+            vdb = cls.analyst.vector_db
+            namespace = vdb._get_namespace(scope=scope, agency_id=agency_id, client_id=client_id)
+            index = vdb.pc.Index(vdb.main_index_name)
+
+            # Query SEM nenhum filtro de metadata
+            dummy_vector = [0.0] * 1536
+            dummy_vector[0] = 1.0
+
+            raw = index.query(
+                vector=dummy_vector,
+                top_k=min(top_k, 10_000),
+                namespace=namespace,
+                include_metadata=True,
+                include_values=False,
+            )
+
+            vectors_raw = []
+            for match in raw.matches:
+                md = match.metadata or {}
+                vectors_raw.append({
+                    "id": match.id,
+                    "score": round(match.score, 6) if match.score is not None else None,
+                    "metadata_agency_id": md.get("agency_id"),
+                    "metadata_agency_id_type": type(md.get("agency_id")).__name__,
+                    "metadata_client_id": md.get("client_id"),
+                    "metadata_client_id_type": type(md.get("client_id")).__name__,
+                    "metadata_doc_type": md.get("doc_type"),
+                    "metadata_scope": md.get("scope"),
+                    "metadata_source": md.get("source"),
+                    "metadata_created_at": md.get("created_at"),
+                    "metadata_author": md.get("author"),
+                    "all_metadata_keys": list(md.keys()),
+                })
+
+            # Estatísticas de consistência de metadata
+            agency_id_values = list({v["metadata_agency_id"] for v in vectors_raw})
+            client_id_values = list({v["metadata_client_id"] for v in vectors_raw})
+            agency_id_types  = list({v["metadata_agency_id_type"] for v in vectors_raw})
+            client_id_types  = list({v["metadata_client_id_type"] for v in vectors_raw})
+
+            return {
+                "debug": True,
+                "namespace_used": namespace,
+                "index_name": vdb.main_index_name,
+                "query_agency_id": agency_id,
+                "query_agency_id_type": type(agency_id).__name__,
+                "query_client_id": client_id,
+                "query_client_id_type": type(client_id).__name__ if client_id is not None else "NoneType",
+                "total_vectors_found": len(vectors_raw),
+                "distinct_agency_id_values_in_metadata": agency_id_values,
+                "distinct_agency_id_types_in_metadata": agency_id_types,
+                "distinct_client_id_values_in_metadata": client_id_values,
+                "distinct_client_id_types_in_metadata": client_id_types,
+                "vectors": vectors_raw,
+            }
+        except Exception as e:
+            return {"debug": True, "error": str(e), "error_type": type(e).__name__}
