@@ -120,14 +120,28 @@ def _basic_kpis(df: pd.DataFrame, cols: List[str]) -> Dict[str, Dict[str, float]
 def _mad_anomalies(df: pd.DataFrame, col: str, zcut: float = 3.0) -> List[Dict[str, Any]]:
     if col not in df.columns:
         return []
-    s = df[col].fillna(0)
-    med = s.median()
-    mad = (s - med).abs().median()
-    if mad == 0:
+    # Mantém apenas valores numéricos válidos; ausentes após merge entre plataformas
+    # não devem virar outliers nem ser convertidos para float.
+    s = pd.to_numeric(df[col], errors="coerce")
+    valid_mask = s.notna()
+    if valid_mask.sum() == 0:
         return []
-    z = 0.6745 * (s - med) / mad
-    outliers = df.loc[z.abs() >= zcut, ["data", col]].copy()
-    return [{"data": str(row["data"].date()), col: float(row[col])} for _, row in outliers.iterrows()]
+    s_valid = s.loc[valid_mask]
+    med = s_valid.median()
+    mad = (s_valid - med).abs().median()
+    if mad == 0 or pd.isna(mad):
+        return []
+
+    z = 0.6745 * (s_valid - med) / mad
+    outlier_idx = z.loc[z.abs() >= zcut].index
+    outliers = df.loc[outlier_idx, ["data", col]].copy()
+    outliers[col] = pd.to_numeric(outliers[col], errors="coerce")
+    outliers = outliers.dropna(subset=["data", col])
+
+    records: List[Dict[str, Any]] = []
+    for _, row in outliers.iterrows():
+        records.append({"data": str(row["data"].date()), col: float(row[col])})
+    return records
 
 def _dod_change_mean(df: pd.DataFrame, col: str) -> Optional[float]:
     if col not in df.columns:
